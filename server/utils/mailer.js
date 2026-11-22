@@ -16,8 +16,15 @@ function generateVerificationToken(prefix = 'ver') {
 }
 
 function getBaseServerUrl() {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
   const port = process.env.PORT || 5000;
-  return process.env.PUBLIC_URL || `http://localhost:${port}`;
+  return `http://localhost:${port}`;
 }
 
 function buildVerificationUrl(tipo, token) {
@@ -73,7 +80,12 @@ function persistSmtpToEnvFile({ host, port, secure, user, pass, from }) {
     }
   });
 
-  fs.writeFileSync(envPath, lines.filter((l, i, arr) => i < arr.length - 1 || l !== '').join('\n') + '\n', 'utf8');
+  try {
+    fs.writeFileSync(envPath, lines.filter((l, i, arr) => i < arr.length - 1 || l !== '').join('\n') + '\n', 'utf8');
+  } catch (err) {
+    // En Vercel Serverless el sistema de archivos es de solo lectura
+    console.warn('ℹ️ No se pudo persistir .env (entorno solo lectura):', err.message);
+  }
 }
 
 async function configureRealSmtp({ host = 'smtp.gmail.com', port = 587, secure = false, user, pass, from }) {
