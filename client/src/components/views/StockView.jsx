@@ -6,6 +6,7 @@ import { formatCOP } from '../../utils/format';
 export const StockView = () => {
   const {
     products = [],
+    setProducts,
     addToCart,
     setCurrentView,
     openModal,
@@ -13,15 +14,105 @@ export const StockView = () => {
     openEditProduct,
     openDeactivateProduct,
     openPurchaseModal,
+    showToast,
+    currentUser,
     isAdmin,
     hasPermiso = () => true,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState('catalogo'); // 'catalogo' | 'movimientos'
-  const [filterEstado, setFilterEstado] = useState('ACTIVO'); // 'ACTIVO' | 'STOCK_BAJO' | 'INACTIVO' | 'TODOS'
+  const [filterEstado, setFilterEstado] = useState('ACTIVO'); // 'ACTIVO' | 'AGOTADO' | 'STOCK_BAJO' | 'INACTIVO' | 'TODOS'
   const [tableSearch, setTableSearch] = useState('');
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
   const scrollContainerRef = useRef(null);
+
+  // Estado para modal de Ajuste Manual de Stock (RF-14 / RF-41)
+  const [adjustProduct, setAdjustProduct] = useState(null);
+  const [adjustType, setAdjustType] = useState('SALIDA'); // 'SALIDA' | 'ENTRADA' | 'AJUSTE' | 'DEVOLUCION'
+  const [adjustQty, setAdjustQty] = useState('1');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustError, setAdjustError] = useState('');
+  const [adjustLoading, setAdjustLoading] = useState(false);
+
+  const openAdjustModal = (product) => {
+    setAdjustProduct(product);
+    setAdjustType('SALIDA');
+    setAdjustQty('1');
+    setAdjustReason('');
+    setAdjustError('');
+  };
+
+  const closeAdjustModal = () => {
+    setAdjustProduct(null);
+    setAdjustError('');
+  };
+
+  const handleAdjustSubmit = async (e) => {
+    e.preventDefault();
+    if (!adjustProduct) return;
+    setAdjustError('');
+
+    const qtyNum = parseInt(adjustQty, 10);
+    const currentStock = adjustProduct.stock !== undefined ? parseInt(adjustProduct.stock, 10) : 0;
+
+    if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
+      setAdjustError('La cantidad debe ser un número entero mayor a 0.');
+      return;
+    }
+    if (adjustType === 'SALIDA' && qtyNum > currentStock) {
+      setAdjustError(`No puedes descontar ${qtyNum} und. porque el stock actual es ${currentStock}.`);
+      return;
+    }
+    if (!adjustReason.trim()) {
+      setAdjustError('Debes redactar una justificación para el ajuste de stock.');
+      return;
+    }
+
+    setAdjustLoading(true);
+    try {
+      const mov = await api.createInventoryAdjustment({
+        id_producto: adjustProduct.id_producto,
+        tipo_movimiento: adjustType,
+        cantidad: qtyNum,
+        observacion: adjustReason.trim(),
+        id_usuario: currentUser?.id_usuario || 1,
+      });
+
+      const newStockVal =
+        mov?.existencia_nueva !== undefined
+          ? parseInt(mov.existencia_nueva, 10)
+          : adjustType === 'ENTRADA' || adjustType === 'DEVOLUCION'
+          ? currentStock + qtyNum
+          : adjustType === 'SALIDA'
+          ? Math.max(0, currentStock - qtyNum)
+          : qtyNum;
+
+      if (typeof setProducts === 'function') {
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id_producto === adjustProduct.id_producto
+              ? { ...item, stock: newStockVal }
+              : item
+          )
+        );
+      }
+
+      // Refrescar Kardex en segundo plano
+      api.getInventoryMovements().then((data) => setMovimientos(data)).catch(() => {});
+
+      showToast(
+        `Ajuste registrado (${adjustType} ${qtyNum}): "${adjustProduct.nombre}" pasó de ${currentStock} → ${newStockVal} und.`,
+        'tune'
+      );
+      closeAdjustModal();
+    } catch (err) {
+      const msg = err.message || 'No se pudo registrar el ajuste de inventario.';
+      setAdjustError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setAdjustLoading(false);
+    }
+  };
 
   const scrollToTop = () => {
     if (scrollContainerRef.current) {
@@ -51,16 +142,27 @@ export const StockView = () => {
     setCurrentView('pos');
   };
 
-  const lowStockCount = (products || []).filter(p => (p.estado || 'ACTIVO').toUpperCase() === 'ACTIVO' && (p.stock !== undefined ? p.stock : 0) <= (p.stock_minimo || 5)).length;
+  const outOfStockCount = (products || []).filter(
+    p => (p.estado || 'ACTIVO').toUpperCase() === 'ACTIVO' && (p.stock !== undefined ? p.stock : 0) <= 0
+  ).length;
+
+  const lowStockCount = (products || []).filter(p => {
+    const isAct = (p.estado || 'ACTIVO').toUpperCase() === 'ACTIVO';
+    const st = p.stock !== undefined ? p.stock : 0;
+    const minSt = p.stock_minimo ?? 5;
+    return isAct && st > 0 && st <= minSt;
+  }).length;
 
   const filteredProducts = products.filter((p) => {
     const estado = (p.estado || 'ACTIVO').toUpperCase();
     const stock = p.stock !== undefined ? p.stock : 0;
-    const minStock = p.stock_minimo || 5;
+    const minStock = p.stock_minimo ?? 5;
 
     let matchEstado = true;
-    if (filterEstado === 'STOCK_BAJO') {
-      matchEstado = estado === 'ACTIVO' && stock <= minStock;
+    if (filterEstado === 'AGOTADO') {
+      matchEstado = estado === 'ACTIVO' && stock <= 0;
+    } else if (filterEstado === 'STOCK_BAJO') {
+      matchEstado = estado === 'ACTIVO' && stock > 0 && stock <= minStock;
     } else if (filterEstado !== 'TODOS') {
       matchEstado = estado === filterEstado;
     }
@@ -99,6 +201,19 @@ export const StockView = () => {
               <span className="material-symbols-outlined text-blue-600">inventory_2</span>
               Gestión Integral de Inventario &amp; Stock
             </h2>
+            {outOfStockCount > 0 && (
+              <span
+                onClick={() => {
+                  setActiveTab('catalogo');
+                  setFilterEstado('AGOTADO');
+                }}
+                className="px-2 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10px] font-bold rounded-full border border-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
+                title="Ver productos agotados (stock 0)"
+              >
+                <span className="material-symbols-outlined text-xs text-rose-700">error</span>
+                {outOfStockCount} Agotado{outOfStockCount > 1 ? 's' : ''}
+              </span>
+            )}
             {lowStockCount > 0 && (
               <span 
                 onClick={() => {
@@ -180,6 +295,24 @@ export const StockView = () => {
       {/* PESTAÑA 1: CATÁLOGO DE PRODUCTOS */}
       {activeTab === 'catalogo' && (
         <>
+          {/* Alerta de Productos Agotados (stock 0) */}
+          {outOfStockCount > 0 && filterEstado !== 'AGOTADO' && (
+            <div className="bg-rose-50 border border-rose-300 rounded-xl p-2.5 px-3 flex items-center justify-between text-xs text-rose-900 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-rose-600 text-base">error</span>
+                <span>
+                  Hay <strong>{outOfStockCount} producto{outOfStockCount > 1 ? 's' : ''} agotado{outOfStockCount > 1 ? 's' : ''}</strong> (stock en 0) que requiere{outOfStockCount > 1 ? 'n' : ''} reposición urgente.
+                </span>
+              </div>
+              <button
+                onClick={() => setFilterEstado('AGOTADO')}
+                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                Ver Agotados
+              </button>
+            </div>
+          )}
+
           {/* Alerta de Stock Bajo (si hay productos que lo requieren) */}
           {lowStockCount > 0 && filterEstado !== 'STOCK_BAJO' && (
             <div className="bg-amber-50 border border-amber-300 rounded-xl p-2.5 px-3 flex items-center justify-between text-xs text-amber-900 shrink-0">
@@ -221,6 +354,17 @@ export const StockView = () => {
                 onClick={() => setFilterEstado('ACTIVO')}
               >
                 Activos ({activeCount})
+              </button>
+              <button
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                  filterEstado === 'AGOTADO'
+                    ? 'bg-rose-600 text-white font-bold'
+                    : 'text-rose-700 hover:bg-rose-50'
+                }`}
+                onClick={() => setFilterEstado('AGOTADO')}
+              >
+                <span className="material-symbols-outlined text-xs">error</span>
+                Agotados ({outOfStockCount})
               </button>
               <button
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer flex items-center gap-1 ${
@@ -283,7 +427,9 @@ export const StockView = () => {
                 ) : (
                   filteredProducts.map((p) => {
                     const stock = p.stock !== undefined ? p.stock : 0;
-                    const isLow = stock <= (p.stock_minimo || 5);
+                    const minStock = p.stock_minimo ?? 5;
+                    const isOutOfStock = stock <= 0;
+                    const isLow = !isOutOfStock && stock <= minStock;
                     const isActive = (p.estado || 'ACTIVO').toUpperCase() === 'ACTIVO';
 
                     return (
@@ -326,15 +472,34 @@ export const StockView = () => {
                           {formatCOP(p.precio_venta)}
                         </td>
                         <td className="p-3 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              isLow
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}
-                          >
-                            {stock}
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1 border ${
+                                isOutOfStock
+                                  ? 'bg-rose-100 text-rose-700 border-rose-300'
+                                  : isLow
+                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }`}
+                            >
+                              {isOutOfStock ? (
+                                <>
+                                  <span className="material-symbols-outlined text-[12px]">error</span>
+                                  Agotado (0)
+                                </>
+                              ) : isLow ? (
+                                <>
+                                  <span className="material-symbols-outlined text-[12px]">warning</span>
+                                  Stock Bajo ({stock})
+                                </>
+                              ) : (
+                                <>{stock} und.</>
+                              )}
+                            </span>
+                            <span className="text-[9.5px] text-slate-400 font-mono">
+                              Mín: {minStock}
+                            </span>
+                          </div>
                         </td>
                         <td className="p-3 text-center">
                           <span
@@ -385,6 +550,19 @@ export const StockView = () => {
                               </button>
                             )}
 
+                            {/* Ajuste Manual de Stock (RF-14 / RF-41) */}
+                            {(hasPermiso('editar_producto') || hasPermiso('ver_inventario') || isAdmin) && (
+                              <button
+                                id={`btn-ajuste-stock-${p.id_producto}`}
+                                onClick={() => openAdjustModal(p)}
+                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded text-xs font-semibold transition-colors flex items-center gap-0.5 border border-indigo-200 cursor-pointer"
+                                title="Ajuste manual de stock (conteo físico / merma / entrada)"
+                              >
+                                <span className="material-symbols-outlined text-xs">tune</span>
+                                <span>Ajuste de Stock</span>
+                              </button>
+                            )}
+
                             {/* Reponer Stock / Comprar */}
                             {(hasPermiso('crear_compra') || isAdmin) && (
                               <button
@@ -432,7 +610,9 @@ export const StockView = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredProducts.map((p) => {
                   const stock = p.stock !== undefined ? p.stock : 0;
-                  const isLow = stock <= (p.stock_minimo || 5);
+                  const minStock = p.stock_minimo ?? 5;
+                  const isOutOfStock = stock <= 0;
+                  const isLow = !isOutOfStock && stock <= minStock;
                   const isActive = (p.estado || 'ACTIVO').toUpperCase() === 'ACTIVO';
 
                   return (
@@ -451,11 +631,15 @@ export const StockView = () => {
                             className="w-full h-full object-cover"
                           />
                           <span
-                            className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs text-white ${
-                              isLow ? 'bg-amber-500' : 'bg-emerald-600'
+                            className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs text-white flex items-center gap-0.5 ${
+                              isOutOfStock
+                                ? 'bg-rose-600'
+                                : isLow
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-600'
                             }`}
                           >
-                            Stock: {stock}
+                            {isOutOfStock ? 'Agotado (0)' : isLow ? `Stock Bajo: ${stock}` : `Stock: ${stock}`}
                           </span>
                           <span
                             className={`absolute top-2 left-2 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-xs border ${
@@ -485,7 +669,7 @@ export const StockView = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-4 gap-1 mt-3 pt-2.5 border-t border-slate-100">
+                      <div className="grid grid-cols-5 gap-1 mt-3 pt-2.5 border-t border-slate-100">
                         <button
                           onClick={() => openDetailProduct(p)}
                           className="py-1 px-1 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded text-[11px] font-semibold border border-slate-200 flex items-center justify-center gap-1 cursor-pointer"
@@ -500,6 +684,15 @@ export const StockView = () => {
                             title="Modificar"
                           >
                             <span className="material-symbols-outlined text-xs">edit</span>
+                          </button>
+                        )}
+                        {(hasPermiso('editar_producto') || hasPermiso('ver_inventario') || isAdmin) && (
+                          <button
+                            onClick={() => openAdjustModal(p)}
+                            className="py-1 px-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-semibold border border-indigo-200 flex items-center justify-center gap-1 cursor-pointer"
+                            title="Ajuste de Stock"
+                          >
+                            <span className="material-symbols-outlined text-xs">tune</span>
                           </button>
                         )}
                         {(hasPermiso('crear_compra') || isAdmin) && (
@@ -719,6 +912,149 @@ export const StockView = () => {
           </div>
         </>
       )}
+
+      {/* MODAL: AJUSTE MANUAL DE STOCK (RF-14 / RF-41) */}
+      {adjustProduct && (() => {
+        const currentStock = adjustProduct.stock !== undefined ? parseInt(adjustProduct.stock, 10) : 0;
+        const qtyInt = parseInt(adjustQty, 10) || 0;
+        const projectedStock =
+          adjustType === 'ENTRADA' || adjustType === 'DEVOLUCION'
+            ? currentStock + qtyInt
+            : adjustType === 'SALIDA'
+            ? currentStock - qtyInt
+            : qtyInt;
+        const isInvalidOut = adjustType === 'SALIDA' && qtyInt > currentStock;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-indigo-400">tune</span>
+                  <div>
+                    <h3 className="font-bold text-sm leading-tight">Ajuste Manual de Stock</h3>
+                    <p className="text-[10px] text-slate-300">Conteo físico, merma o corrección de existencias</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAdjustModal}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleAdjustSubmit} className="p-4 space-y-3 text-xs">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 truncate">{adjustProduct.nombre}</p>
+                    <p className="font-mono text-[10px] text-slate-400">{adjustProduct.codigo}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] text-slate-500 block">Stock actual</span>
+                    <span className="text-sm font-mono font-extrabold text-slate-900">{currentStock} und.</span>
+                  </div>
+                </div>
+
+                {adjustError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-start gap-2 text-[11px] font-semibold">
+                    <span className="material-symbols-outlined text-base text-rose-600 shrink-0">error</span>
+                    <span>{adjustError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1 text-[11px]">
+                      Tipo de Movimiento *
+                    </label>
+                    <select
+                      id="select-tipo-ajuste"
+                      value={adjustType}
+                      onChange={(e) => {
+                        setAdjustType(e.target.value);
+                        setAdjustError('');
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:bg-white focus:ring-1 focus:ring-indigo-600 focus:outline-none"
+                    >
+                      <option value="SALIDA">SALIDA (Merma / Descuento)</option>
+                      <option value="ENTRADA">ENTRADA (Ingreso / Hallazgo)</option>
+                      <option value="AJUSTE">AJUSTE (Fijar stock exacto)</option>
+                      <option value="DEVOLUCION">DEVOLUCION (Retorno a almacén)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1 text-[11px]">
+                      {adjustType === 'AJUSTE' ? 'Nueva Existencia *' : 'Cantidad *'}
+                    </label>
+                    <input
+                      id="input-cantidad-ajuste"
+                      type="number"
+                      min="1"
+                      required
+                      value={adjustQty}
+                      onChange={(e) => {
+                        setAdjustQty(e.target.value);
+                        setAdjustError('');
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold focus:bg-white focus:ring-1 focus:ring-indigo-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1 text-[11px]">
+                    Justificación / Motivo *
+                  </label>
+                  <textarea
+                    id="input-justificacion-ajuste"
+                    rows={2}
+                    required
+                    placeholder="Ej. Conteo físico mensual, merma por daño en bodega, devolución de exhibición..."
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-indigo-600 focus:outline-none resize-none"
+                  />
+                </div>
+
+                <div
+                  className={`p-2.5 rounded-xl border flex items-center justify-between text-[11px] font-semibold ${
+                    isInvalidOut
+                      ? 'bg-rose-50 border-rose-200 text-rose-700'
+                      : 'bg-indigo-50 border-indigo-200 text-indigo-900'
+                  }`}
+                >
+                  <span>Resultado proyectado en almacén:</span>
+                  <span className="font-mono font-extrabold">
+                    {currentStock} → {isInvalidOut ? 'Insuficiente' : `${projectedStock} und.`}
+                  </span>
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={closeAdjustModal}
+                    className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    id="btn-confirmar-ajuste"
+                    type="submit"
+                    disabled={adjustLoading || isInvalidOut}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span className="material-symbols-outlined text-sm">check</span>
+                    {adjustLoading ? 'Aplicando...' : 'Aplicar Ajuste'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </section>
   );
 };

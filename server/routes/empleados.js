@@ -179,9 +179,9 @@ router.post('/', async (req, res) => {
       }
 
       const empRes = await client.query(
-        `INSERT INTO empleados (tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, correo, cargo, correo_verificado, token_verificacion, estado, fecha_ingreso, fecha_registro)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, 'ACTIVO', CURRENT_DATE, CURRENT_TIMESTAMP) RETURNING *`,
-        [tipo_identificacion, cleanDoc, cleanNombres, cleanApellidos, telefono, cleanEmail, cargo, token]
+        `INSERT INTO empleados (tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, correo, cargo, correo_verificado, token_verificacion, fecha_verificacion, estado, fecha_ingreso, fecha_registro)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, NULL, CURRENT_TIMESTAMP, 'ACTIVO', CURRENT_DATE, CURRENT_TIMESTAMP) RETURNING *`,
+        [tipo_identificacion, cleanDoc, cleanNombres, cleanApellidos, telefono, cleanEmail, cargo]
       );
       const newEmp = empRes.rows[0];
 
@@ -197,22 +197,14 @@ router.post('/', async (req, res) => {
       await client.query('COMMIT');
       newEmp.rol = rol;
       newEmp.nombre_usuario = cleanUsername;
-
-      const mailInfo = await sendVerificationEmail({
-        to: cleanEmail,
-        nombre: `${newEmp.nombres} ${newEmp.apellidos}`.trim(),
-        tipo: 'empleado',
-        token,
-      });
-      newEmp.verificationUrl = mailInfo.verificationUrl;
-      newEmp.previewUrl = mailInfo.previewUrl;
+      newEmp.correo_verificado = true;
 
       await registrarOperacion({
         id_usuario,
         operacion: 'CREAR',
         tabla_afectada: 'empleados',
         id_registro_afectado: newEmp.id_empleado,
-        descripcion: `Registro de colaborador: ${newEmp.nombres} ${newEmp.apellidos} (${newEmp.cargo}) - Verificación enviada a ${cleanEmail}`,
+        descripcion: `Registro de colaborador por administrador: ${newEmp.nombres} ${newEmp.apellidos} (${newEmp.cargo}) - Acceso habilitado directamente (${cleanEmail})`,
         datos_nuevos: newEmp
       });
 
@@ -334,8 +326,6 @@ router.put('/:id', async (req, res) => {
 
       const prevEmail = (prevRes.rows[0].correo || '').trim().toLowerCase();
       const nextEmail = correo ? correo.trim().toLowerCase() : prevEmail;
-      const emailChanged = Boolean(correo && nextEmail && nextEmail !== prevEmail);
-      const newToken = emailChanged ? generateVerificationToken('emp') : null;
 
       const updateRes = await client.query(
         `UPDATE empleados
@@ -347,11 +337,12 @@ router.put('/:id', async (req, res) => {
              correo = COALESCE($6, correo),
              cargo = COALESCE($7, cargo),
              estado = COALESCE($8, estado),
-             correo_verificado = CASE WHEN $10::boolean THEN FALSE ELSE correo_verificado END,
-             token_verificacion = CASE WHEN $10::boolean THEN $11 ELSE token_verificacion END
+             correo_verificado = TRUE,
+             token_verificacion = NULL,
+             fecha_verificacion = COALESCE(fecha_verificacion, CURRENT_TIMESTAMP)
          WHERE id_empleado = $9
          RETURNING *`,
-        [tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, nextEmail, cargo, estado, id, emailChanged, newToken]
+        [tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, nextEmail, cargo, estado, id]
       );
 
       const updatedEmp = updateRes.rows[0];
@@ -367,15 +358,7 @@ router.put('/:id', async (req, res) => {
 
       await client.query('COMMIT');
       updatedEmp.rol = rol || updatedEmp.cargo;
-      if (emailChanged) {
-        const mailInfo = await sendVerificationEmail({
-          to: nextEmail,
-          nombre: `${updatedEmp.nombres} ${updatedEmp.apellidos}`.trim(),
-          tipo: 'empleado',
-          token: newToken,
-        });
-        updatedEmp.verificationUrl = mailInfo.verificationUrl;
-      }
+      updatedEmp.correo_verificado = true;
       await registrarOperacion({
         id_usuario,
         operacion: 'MODIFICAR',

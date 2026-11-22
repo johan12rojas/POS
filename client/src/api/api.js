@@ -157,6 +157,7 @@ export const api = {
 
   // Compras
   getPurchases: () => fetchJson('/compras'),
+  getPurchase: (id) => fetchJson(`/compras/${id}`),
   createPurchase: (data) => fetchJson('/compras', { method: 'POST', body: JSON.stringify(data) }),
 
   // Permisos

@@ -173,8 +173,13 @@ router.get('/alertas', async (req, res) => {
 router.post('/ajuste', async (req, res) => {
   const { id_producto, tipo_movimiento, cantidad, observacion, id_usuario = 1 } = req.body;
 
-  if (!id_producto || !tipo_movimiento || !cantidad || cantidad <= 0) {
-    return res.status(400).json({ error: 'Producto, tipo de movimiento y cantidad válida son requeridos' });
+  const prodId = parseInt(id_producto, 10);
+  const tipo = String(tipo_movimiento || '').trim().toUpperCase();
+  const cantNum = parseInt(cantidad, 10);
+  const tiposValidos = ['ENTRADA', 'SALIDA', 'AJUSTE', 'DEVOLUCION'];
+
+  if (!Number.isInteger(prodId) || prodId <= 0 || !tiposValidos.includes(tipo) || !Number.isInteger(cantNum) || cantNum <= 0) {
+    return res.status(400).json({ error: 'Producto, tipo de movimiento válido (ENTRADA, SALIDA, AJUSTE, DEVOLUCION) y cantidad mayor a 0 son requeridos.' });
   }
 
   const client = await pool.connect().catch(() => null);
@@ -182,38 +187,64 @@ router.post('/ajuste', async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      const invRes = await client.query('SELECT cantidad_actual FROM inventario WHERE id_producto = $1 FOR UPDATE', [id_producto]);
-      const actual = invRes.rows.length > 0 ? parseInt(invRes.rows[0].cantidad_actual) : 0;
+      const prodRes = await client.query('SELECT id_producto, nombre, codigo FROM productos WHERE id_producto = $1', [prodId]);
+      if (prodRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Producto no encontrado.' });
+      }
+      const prodInfo = prodRes.rows[0];
+
+      const invRes = await client.query('SELECT cantidad_actual FROM inventario WHERE id_producto = $1 FOR UPDATE', [prodId]);
+      const hasInvRow = invRes.rows.length > 0;
+      const actual = hasInvRow ? parseInt(invRes.rows[0].cantidad_actual, 10) : 0;
+
+      if (tipo === 'SALIDA' && cantNum > actual) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Stock insuficiente para salida: existencias actuales (${actual}), intentas descontar (${cantNum}).`
+        });
+      }
 
       let nuevaExistencia = actual;
-      if (tipo_movimiento === 'ENTRADA') nuevaExistencia = actual + parseInt(cantidad);
-      else if (tipo_movimiento === 'SALIDA') nuevaExistencia = Math.max(0, actual - parseInt(cantidad));
-      else if (tipo_movimiento === 'AJUSTE') nuevaExistencia = parseInt(cantidad);
+      if (tipo === 'ENTRADA' || tipo === 'DEVOLUCION') nuevaExistencia = actual + cantNum;
+      else if (tipo === 'SALIDA') nuevaExistencia = actual - cantNum;
+      else if (tipo === 'AJUSTE') nuevaExistencia = cantNum;
 
-      await client.query(
-        `UPDATE inventario SET cantidad_actual = $1, fecha_actualizacion = CURRENT_TIMESTAMP WHERE id_producto = $2`,
-        [nuevaExistencia, id_producto]
-      );
+      if (hasInvRow) {
+        await client.query(
+          `UPDATE inventario SET cantidad_actual = $1, fecha_actualizacion = CURRENT_TIMESTAMP WHERE id_producto = $2`,
+          [nuevaExistencia, prodId]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO inventario (id_producto, cantidad_actual, fecha_actualizacion) VALUES ($1, $2, CURRENT_TIMESTAMP)`,
+          [prodId, nuevaExistencia]
+        );
+      }
 
       const movRes = await client.query(
         `INSERT INTO movimientos_inventario 
          (id_producto, id_usuario, tipo_movimiento, cantidad, existencia_anterior, existencia_nueva, origen, observacion)
          VALUES ($1, $2, $3, $4, $5, $6, 'AJUSTE MANUAL', $7) RETURNING *`,
-        [id_producto, id_usuario, tipo_movimiento, cantidad, actual, nuevaExistencia, observacion || 'Ajuste manual de existencias']
+        [prodId, parseInt(id_usuario, 10) || 1, tipo, cantNum, actual, nuevaExistencia, (observacion || '').trim() || 'Ajuste manual de existencias']
       );
 
       await client.query('COMMIT');
 
       await registrarOperacion({
-        id_usuario,
+        id_usuario: parseInt(id_usuario, 10) || 1,
         operacion: 'MODIFICAR',
         tabla_afectada: 'inventario',
-        id_registro_afectado: parseInt(id_producto),
-        descripcion: `Ajuste de inventario en producto #${id_producto} (${tipo_movimiento} ${cantidad}). Stock: ${actual} → ${nuevaExistencia}`,
-        datos_nuevos: { existencia_anterior: actual, existencia_nueva: nuevaExistencia }
+        id_registro_afectado: prodId,
+        descripcion: `Ajuste de inventario en ${prodInfo.nombre} (${prodInfo.codigo}) [${tipo} ${cantNum}]. Stock: ${actual} → ${nuevaExistencia}`,
+        datos_nuevos: { existencia_anterior: actual, existencia_nueva: nuevaExistencia, tipo_movimiento: tipo, cantidad: cantNum, observacion: (observacion || '').trim() }
       });
 
-      return res.status(201).json(movRes.rows[0]);
+      return res.status(201).json({
+        ...movRes.rows[0],
+        producto_nombre: prodInfo.nombre,
+        codigo_sku: prodInfo.codigo
+      });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('Error saving inventory adjustment:', err.message);

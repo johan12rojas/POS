@@ -4,23 +4,101 @@ const { pool } = require('../db/pool');
 const { purchases, providers } = require('../db/fallbackData');
 const { registrarOperacion } = require('./auditoria');
 
-// GET /api/compras
+// GET /api/compras - Incluye detalle de productos y cantidades recibidas (RF-12)
 router.get('/', async (req, res) => {
   try {
     const query = `
       SELECT 
         c.*,
         p.nombre AS proveedor,
-        u.nombre_usuario AS usuario
+        COALESCE(NULLIF(TRIM(e.nombres || ' ' || e.apellidos), ''), u.nombre_usuario) AS usuario,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id_detalle_compra', dc.id_detalle_compra,
+                'id_producto', dc.id_producto,
+                'codigo', pr.codigo,
+                'producto_nombre', pr.nombre,
+                'cantidad', dc.cantidad,
+                'costo_unitario', dc.costo_unitario,
+                'subtotal', dc.subtotal
+              ) ORDER BY dc.id_detalle_compra ASC
+            )
+            FROM detalle_compra dc
+            JOIN productos pr ON dc.id_producto = pr.id_producto
+            WHERE dc.id_compra = c.id_compra
+          ),
+          '[]'::json
+        ) AS items
       FROM compras c
       JOIN proveedores p ON c.id_proveedor = p.id_proveedor
       JOIN usuarios u ON c.id_usuario = u.id_usuario
+      LEFT JOIN empleados e ON u.id_empleado = e.id_empleado
       ORDER BY c.id_compra DESC
     `;
     const result = await pool.query(query);
-    res.json(result.rows);
+    res.json(result.rows.map(row => {
+      const items = Array.isArray(row.items) ? row.items : [];
+      const total_unidades = items.reduce((acc, it) => acc + (parseInt(it.cantidad, 10) || 0), 0);
+      return {
+        ...row,
+        items,
+        total_productos: items.length,
+        total_unidades
+      };
+    }));
   } catch (err) {
+    console.error('Error fetching compras:', err.message);
     res.json(purchases);
+  }
+});
+
+// GET /api/compras/:id - Detalle individual de una compra
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const compRes = await pool.query(`
+      SELECT 
+        c.*,
+        p.nombre AS proveedor,
+        COALESCE(NULLIF(TRIM(e.nombres || ' ' || e.apellidos), ''), u.nombre_usuario) AS usuario
+      FROM compras c
+      JOIN proveedores p ON c.id_proveedor = p.id_proveedor
+      JOIN usuarios u ON c.id_usuario = u.id_usuario
+      LEFT JOIN empleados e ON u.id_empleado = e.id_empleado
+      WHERE c.id_compra = $1
+    `, [parseInt(id, 10)]);
+
+    if (compRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    }
+
+    const itemsRes = await pool.query(`
+      SELECT 
+        dc.id_detalle_compra,
+        dc.id_producto,
+        pr.codigo,
+        pr.nombre AS producto_nombre,
+        dc.cantidad,
+        dc.costo_unitario,
+        dc.subtotal
+      FROM detalle_compra dc
+      JOIN productos pr ON dc.id_producto = pr.id_producto
+      WHERE dc.id_compra = $1
+      ORDER BY dc.id_detalle_compra ASC
+    `, [parseInt(id, 10)]);
+
+    const items = itemsRes.rows;
+    const total_unidades = items.reduce((acc, it) => acc + (parseInt(it.cantidad, 10) || 0), 0);
+    return res.json({
+      ...compRes.rows[0],
+      items,
+      total_productos: items.length,
+      total_unidades
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al consultar detalle de compra' });
   }
 });
 
@@ -92,7 +170,31 @@ router.post('/', async (req, res) => {
         datos_nuevos: { id_compra: newComp.id_compra, proveedor: provNombre, total: parseFloat(total), items_count: items.length }
       });
 
-      return res.status(201).json(newComp);
+      const enrichedItemsRes = await pool.query(`
+        SELECT 
+          dc.id_detalle_compra,
+          dc.id_producto,
+          pr.codigo,
+          pr.nombre AS producto_nombre,
+          dc.cantidad,
+          dc.costo_unitario,
+          dc.subtotal
+        FROM detalle_compra dc
+        JOIN productos pr ON dc.id_producto = pr.id_producto
+        WHERE dc.id_compra = $1
+        ORDER BY dc.id_detalle_compra ASC
+      `, [newComp.id_compra]).catch(() => ({ rows: [] }));
+      const enrichedItems = enrichedItemsRes.rows || [];
+      const totalUnidades = enrichedItems.reduce((acc, it) => acc + (parseInt(it.cantidad, 10) || 0), 0);
+
+      return res.status(201).json({
+        ...newComp,
+        proveedor: provNombre,
+        usuario: usuarioNombre,
+        items: enrichedItems,
+        total_productos: enrichedItems.length,
+        total_unidades: totalUnidades
+      });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('DB error recording purchase:', err.message);

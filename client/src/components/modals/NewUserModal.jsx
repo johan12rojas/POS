@@ -73,10 +73,9 @@ export const NewUserModal = () => {
     setLoading(true);
     try {
       const newEmp = await api.createEmployee(payload);
-      setEmployees(prev => [...prev, newEmp]);
-      setCreatedEmp(newEmp);
+      setEmployees(prev => [...prev, { ...newEmp, correo_verificado: true }]);
       setErrorMsg('');
-      showToast(`Colaborador registrado. Enlace de verificación enviado a ${payload.correo}`, 'mark_email_read');
+      showToast(`Colaborador "${payload.nombres} ${payload.apellidos}" registrado y habilitado para ingresar.`, 'verified_user');
       setNumDoc('');
       setNombres('');
       setApellidos('');
@@ -84,6 +83,7 @@ export const NewUserModal = () => {
       setCorreo('');
       setUsername('');
       setPassword('');
+      closeModal();
     } catch (err) {
       const msg = err.message || 'Error al registrar colaborador';
       setErrorMsg(msg);
@@ -103,7 +103,7 @@ export const NewUserModal = () => {
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-sm">Registrar Nuevo Empleado</h3>
-              <p className="text-[10px] text-slate-400">Ficha de colaborador, credenciales RBAC y verificación por correo</p>
+              <p className="text-[10px] text-slate-400">Ficha de colaborador, correo de acceso y credenciales RBAC (activación inmediata)</p>
             </div>
           </div>
           <button className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer" onClick={handleClose}>
