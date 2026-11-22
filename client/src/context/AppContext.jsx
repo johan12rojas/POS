@@ -204,7 +204,7 @@ export const AppProvider = ({ children }) => {
   const [oauthError, setOauthError] = useState('');
   const [pendingApprovalInfo, setPendingApprovalInfo] = useState(null);
   const [accessRequests, setAccessRequests] = useState([]);
-  const [empleadosInitialTab, setEmpleadosInitialTab] = useState('colaboradores');
+  const [empleadosInitialTab, setEmpleadosInitialTab] = useState(null);
   const currentUserRef = useRef(currentUser);
   const syncingOAuthRef = useRef(false);
 

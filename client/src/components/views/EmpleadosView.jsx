@@ -31,7 +31,9 @@ export const EmpleadosView = () => {
     hasPermiso
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState(empleadosInitialTab || 'colaboradores'); // 'colaboradores' | 'solicitudes'
+  const [activeTab, setActiveTab] = useState(
+    empleadosInitialTab === 'solicitudes' ? 'solicitudes' : 'colaboradores'
+  ); // 'colaboradores' | 'solicitudes'
   const [filterEstado, setFilterEstado] = useState('ACTIVO');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -41,14 +43,14 @@ export const EmpleadosView = () => {
   const [processingId, setProcessingId] = useState(null);
 
   useEffect(() => {
-    if (empleadosInitialTab && isAdmin) {
-      setActiveTab(empleadosInitialTab);
-      if (empleadosInitialTab === 'solicitudes') {
-        refreshAccessRequests?.();
-      }
-      setEmpleadosInitialTab?.('colaboradores');
+    if (empleadosInitialTab === 'solicitudes' && isAdmin) {
+      setActiveTab('solicitudes');
+      refreshAccessRequests?.();
+      setEmpleadosInitialTab?.(null);
     }
-  }, [empleadosInitialTab, isAdmin, refreshAccessRequests, setEmpleadosInitialTab]);
+    // Solo reaccionar cuando el usuario navega desde una notificación hacia solicitudes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empleadosInitialTab, isAdmin]);
 
   const getRoleBadge = (role = '') => {
     if (role.includes('Admin')) return { dot: '#6b7280', label: 'Admin' };
