@@ -192,7 +192,7 @@ export const StockView = () => {
   const inactiveCount = products.filter(p => (p.estado || 'ACTIVO').toUpperCase() === 'INACTIVO').length;
 
   return (
-    <section className="flex flex-col gap-2.5 h-full min-h-0" id="view-stock">
+    <section className="flex flex-col gap-2.5 h-full min-h-0 overflow-y-auto lg:overflow-hidden" id="view-stock">
       {/* Header con Pestañas */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
@@ -346,7 +346,7 @@ export const StockView = () => {
               />
             </div>
 
-            <div className="flex gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-xs">
+            <div className="flex gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-xs overflow-x-auto max-w-full">
               <button
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                   filterEstado === 'ACTIVO' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700'
@@ -397,7 +397,7 @@ export const StockView = () => {
           </div>
 
       {/* Main Content Area (Scrollable Downward) */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex-1 min-h-[320px] lg:min-h-0 flex flex-col overflow-hidden">
         {viewMode === 'table' ? (
           /* TABLA CON DESPLAZAMIENTO HACIA ABAJO Y ENCABEZADOS FIJOS */
           <div
@@ -766,7 +766,7 @@ export const StockView = () => {
               />
             </div>
 
-            <div className="flex gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-xs">
+            <div className="flex gap-0.5 bg-white border border-slate-200 rounded-lg p-0.5 shadow-xs overflow-x-auto max-w-full">
               {[
                 { id: 'TODOS', label: 'Todos' },
                 { id: 'ENTRADA', label: 'Entradas' },

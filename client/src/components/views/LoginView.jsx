@@ -157,7 +157,7 @@ export const LoginView = () => {
 
   return (
     <div
-      className="min-h-screen w-screen flex items-center justify-center bg-cover bg-center bg-no-repeat p-4 select-none relative overflow-y-auto"
+      className="min-h-[100dvh] w-full flex items-center justify-center bg-cover bg-center bg-no-repeat p-3 sm:p-4 select-none relative overflow-y-auto"
       style={{ backgroundImage: `url(${fondoPOS})` }}
     >
       {/* Overlay */}

@@ -123,7 +123,7 @@ export const AuditoriaView = () => {
   };
 
   return (
-    <section className="flex flex-col gap-3 h-full overflow-hidden" id="view-auditoria">
+    <section className="flex flex-col gap-3 h-full overflow-y-auto lg:overflow-hidden" id="view-auditoria">
       {/* Header */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div>

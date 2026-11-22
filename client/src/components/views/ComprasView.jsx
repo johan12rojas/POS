@@ -64,9 +64,9 @@ export const ComprasView = () => {
   }, [purchases]);
 
   return (
-    <section className="flex flex-col gap-3 h-full overflow-hidden" id="view-compras">
+    <section className="flex flex-col gap-3 h-full overflow-y-auto lg:overflow-hidden" id="view-compras">
       {/* Header */}
-      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between shrink-0">
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div>
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <span className="material-symbols-outlined text-blue-600">local_shipping</span>
@@ -175,7 +175,7 @@ export const ComprasView = () => {
       </div>
 
       {/* Tabla de Historial de Compras */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col flex-1 min-h-[300px] lg:min-h-0">
         <div className="overflow-auto flex-1">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] sticky top-0 z-10 shadow-xs">

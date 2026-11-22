@@ -552,7 +552,7 @@ export const ProveedoresView = () => {
   const countInactive = providers.filter((p) => (p.estado || 'ACTIVO').toUpperCase() === 'INACTIVO').length;
 
   return (
-    <section className="flex flex-col gap-3 h-full overflow-hidden" id="view-proveedores">
+    <section className="flex flex-col gap-3 h-full overflow-y-auto lg:overflow-hidden" id="view-proveedores">
       {/* Top Header Card - Match Catálogo & Stock */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4 shrink-0">
         <div>

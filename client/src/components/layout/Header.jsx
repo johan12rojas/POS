@@ -12,7 +12,7 @@ const getRoleAvatar = (rol = '') => {
   return cajeroImg;
 };
 
-export const Header = () => {
+export const Header = ({ onToggleMobileMenu = () => {} }) => {
   const {
     searchQuery,
     setSearchQuery,
@@ -151,10 +151,20 @@ export const Header = () => {
   }, []);
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 px-5 flex items-center justify-between gap-4 shrink-0 relative z-30">
-      {/* Search and Shift Badge */}
-      <div className="flex items-center gap-3 flex-1 max-w-lg relative" ref={searchContainerRef}>
-        <div className="relative w-full">
+    <header className="h-14 bg-white border-b border-slate-200 px-2.5 sm:px-5 flex items-center justify-between gap-2 sm:gap-4 shrink-0 relative z-30">
+      {/* Hamburger Menu (Smartphone/Tablet) + Search and Shift Badge */}
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 max-w-lg relative" ref={searchContainerRef}>
+        <button
+          type="button"
+          id="btn-mobile-menu"
+          onClick={onToggleMobileMenu}
+          className="lg:hidden p-2 -ml-1 rounded-lg text-slate-700 hover:bg-slate-100 active:bg-slate-200 flex items-center justify-center shrink-0 cursor-pointer"
+          aria-label="Abrir menú de navegación"
+        >
+          <span className="material-symbols-outlined text-xl">menu</span>
+        </button>
+
+        <div className="relative flex-1 min-w-0">
           <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-base">
             search
           </span>
@@ -162,7 +172,7 @@ export const Header = () => {
             id="global-search-input"
             type="text"
             className="w-full pl-8 pr-7 py-1.5 bg-slate-100 border border-transparent rounded-lg text-xs focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none transition-all"
-            placeholder="Buscar productos, clientes, facturas o proveedores (F2)..."
+            placeholder="Buscar productos, clientes, facturas..."
             value={searchQuery}
             onFocus={() => setShowSearchDropdown(true)}
             onChange={(e) => {
@@ -356,11 +366,11 @@ export const Header = () => {
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-2 relative">
-        {/* Atajos F1-F12 */}
+      <div className="flex items-center gap-1 sm:gap-2 relative shrink-0">
+        {/* Atajos F1-F12 (solo desktop/tablet) */}
         <button
           onClick={() => openModal('shortcuts')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold transition-colors shadow-xs"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold transition-colors shadow-xs"
         >
           <span className="material-symbols-outlined text-base text-slate-700">keyboard</span>
           <span className="hidden md:inline">Atajos de teclado</span>
@@ -391,7 +401,7 @@ export const Header = () => {
           {showNotifs && (
             <div
               id="popover-notifs"
-              className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 py-2.5 px-3 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+              className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-14 sm:top-11 sm:w-80 bg-white rounded-xl shadow-2xl border border-slate-200 py-2.5 px-3 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
             >
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -533,7 +543,7 @@ export const Header = () => {
           {showUserMenu && (
             <div
               id="popover-user-menu"
-              className="absolute right-0 top-12 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+              className="absolute right-0 top-12 w-[min(16rem,calc(100vw-1.5rem))] bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
             >
               <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-3">
                 <img

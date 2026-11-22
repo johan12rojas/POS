@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from './context/AppContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
@@ -52,6 +52,7 @@ import { AperturaCajaModal } from './components/modals/AperturaCajaModal';
 
 export function AppContent() {
   const { currentView, currentUser, hasPermiso } = useApp();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Listen to keyboard shortcuts (F12, F2, F4, F7, F9, Escape)
   useKeyboardShortcuts();
@@ -59,7 +60,7 @@ export function AppContent() {
   // If not logged in, render Login page
   if (!currentUser) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-slate-50 text-slate-800 font-sans antialiased select-none">
+      <div className="min-h-[100dvh] h-[100dvh] w-full overflow-y-auto bg-slate-50 text-slate-800 font-sans antialiased select-none">
         <Toast />
         <LoginView />
       </div>
@@ -114,20 +115,23 @@ export function AppContent() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-800 font-sans antialiased select-none">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-slate-50 text-slate-800 font-sans antialiased select-none relative">
       {/* Toast notifications */}
       <Toast />
 
-      {/* Navigation Sidebar */}
-      <Sidebar />
+      {/* Navigation Sidebar (drawer on smartphone/tablet, fixed on lg+) */}
+      <Sidebar
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+      />
 
       {/* Main App Container */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col h-[100dvh] overflow-hidden">
         {/* Top Header */}
-        <Header />
+        <Header onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)} />
 
         {/* Dynamic View Content */}
-        <main className="flex-1 overflow-hidden p-3.5 bg-slate-50 relative">
+        <main className="flex-1 min-h-0 min-w-0 overflow-hidden p-2 sm:p-3.5 bg-slate-50 relative">
           {renderView()}
         </main>
       </div>

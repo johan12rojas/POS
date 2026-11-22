@@ -481,7 +481,7 @@ export const CategoriasView = () => {
   const totalProductsInCats = categories.reduce((sum, c) => sum + (parseInt(c.total_productos) || 0), 0);
 
   return (
-    <section className="flex flex-col gap-3 h-full overflow-hidden" id="view-categorias">
+    <section className="flex flex-col gap-3 h-full overflow-y-auto lg:overflow-hidden" id="view-categorias">
       {/* Top Header Card - Match Catálogo & Stock */}
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-4 shrink-0">
         <div>
