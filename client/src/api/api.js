@@ -56,6 +56,12 @@ async function fetchJson(url, options = {}) {
 export const api = {
   // Autenticación
   login: (identifier, password) => fetchJson('/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }) }),
+  supabaseLogin: (accessToken) => fetchJson('/auth/supabase-login', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ access_token: accessToken }),
+  }),
+  register: (data) => fetchJson('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
   // Productos
   getProducts: (params = {}) => {

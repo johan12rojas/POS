@@ -209,15 +209,16 @@ export const NewUserModal = () => {
             {/* Contacto */}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="font-semibold text-slate-700 block mb-0.5 text-[11px]">Correo Electrónico *</label>
+                <label className="font-semibold text-slate-700 block mb-0.5 text-[11px]">Correo Electrónico (Google / Acceso) *</label>
                 <input
                   className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                  placeholder="martin@empresa.com"
+                  placeholder="martin@gmail.com"
                   required
                   type="email"
                   value={correo}
                   onChange={(e) => setCorreo(e.target.value)}
                 />
+                <p className="text-[10px] text-slate-400 mt-0.5">Usado para iniciar sesión con Google y verificación.</p>
               </div>
               <div>
                 <label className="font-semibold text-slate-700 block mb-0.5 text-[11px]">Teléfono</label>

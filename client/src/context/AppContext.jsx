@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { api } from '../api/api';
+import { supabase } from '../lib/supabase';
 
 const AppContext = createContext();
 
@@ -199,9 +200,147 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [oauthError, setOauthError] = useState('');
+  const currentUserRef = useRef(currentUser);
+  const syncingOAuthRef = useRef(false);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  const clearOauthError = () => setOauthError('');
+
+  const syncSupabaseSession = async (session) => {
+    if (!session?.access_token || currentUserRef.current || syncingOAuthRef.current) return;
+    syncingOAuthRef.current = true;
+    setOauthLoading(true);
+    setOauthError('');
+    try {
+      const user = await api.supabaseLogin(session.access_token);
+      setCurrentUser(user);
+      if (user.permisos) setUserPermisos(user.permisos);
+      api.getAllPermisos().then(list => setAllPermisos(list)).catch(() => {});
+      api.getEmployees().then(list => { if (Array.isArray(list) && list.length) setEmployees(list); }).catch(() => {});
+
+      const welcomeMsg = user.newly_registered
+        ? `¡Cuenta registrada con Google! Bienvenido/a, ${user.nombre_completo}`
+        : `¡Bienvenido/a, ${user.nombre_completo}!`;
+      showToast(welcomeMsg, 'verified_user');
+      setCurrentView('pos');
+      checkCajaAndPrompt();
+
+      // Limpiar hash/query de OAuth de la barra de direcciones
+      if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (err) {
+      console.error('Error sincronizando sesión de Supabase:', err);
+      const msg = err.message || 'No se pudo completar el inicio de sesión con Google.';
+      setOauthError(msg);
+      showToast(msg, 'error');
+      if (supabase) {
+        supabase.auth.signOut().catch(() => {});
+      }
+    } finally {
+      setOauthLoading(false);
+      syncingOAuthRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    // Detectar errores devueltos en la URL por OAuth (ej. proveedor no habilitado o acceso cancelado)
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const urlError = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('error') || hashParams.get('error');
+    if (urlError) {
+      setOauthError(decodeURIComponent(urlError.replace(/\+/g, ' ')));
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.access_token && !currentUserRef.current) {
+        syncSupabaseSession(session);
+      }
+    });
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session?.access_token && !currentUserRef.current) {
+        syncSupabaseSession(data.session);
+      }
+    }).catch(() => {});
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const loginWithGoogle = async () => {
+    if (!supabase) {
+      const msg = 'Supabase no está configurado en el cliente (.env.local).';
+      setOauthError(msg);
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    setOauthError('');
+    setOauthLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+      if (error) {
+        const msg = error.message?.includes('provider is not enabled')
+          ? 'El proveedor Google aún no está activado en tu panel de Supabase (Authentication → Providers → Google).'
+          : error.message || 'No se pudo iniciar sesión con Google.';
+        setOauthError(msg);
+        setOauthLoading(false);
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      return { success: true };
+    } catch (err) {
+      const msg = err.message || 'Error conectando con Google.';
+      setOauthError(msg);
+      setOauthLoading(false);
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+  };
+
+  const registerUser = async (payload) => {
+    hasPromptedCajaRef.current = false;
+    try {
+      const user = await api.register(payload);
+      setCurrentUser(user);
+      if (user.permisos) setUserPermisos(user.permisos);
+      api.getAllPermisos().then(list => setAllPermisos(list)).catch(() => {});
+      api.getEmployees().then(list => { if (Array.isArray(list) && list.length) setEmployees(list); }).catch(() => {});
+      showToast(`¡Cuenta creada! Bienvenido/a, ${user.nombre_completo}`, 'verified_user');
+      setCurrentView('pos');
+      checkCajaAndPrompt();
+      return { success: true };
+    } catch (err) {
+      const msg = err.message || 'No se pudo completar el registro.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+  };
+
   const logout = () => {
+    if (supabase) {
+      supabase.auth.signOut().catch(() => {});
+    }
     setCurrentUser(null);
     setUserPermisos([]);
+    setOauthError('');
     hasPromptedCajaRef.current = false;
     showToast('Sesión cerrada correctamente', 'logout');
   };
@@ -1199,6 +1338,11 @@ export const AppProvider = ({ children }) => {
     setCurrentUser,
     isAdmin,
     login,
+    loginWithGoogle,
+    registerUser,
+    oauthLoading,
+    oauthError,
+    clearOauthError,
     logout,
 
     // Product CRUD

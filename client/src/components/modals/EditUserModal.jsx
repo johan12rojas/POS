@@ -207,8 +207,14 @@ export const EditUserModal = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className="font-semibold text-slate-600 block mb-1">Telefono</label><input className={ic} type="text" value={telefono} onChange={e => setTelefono(e.target.value)} /></div>
-                  <div><label className="font-semibold text-slate-600 block mb-1">Correo</label><input className={ic} type="email" value={correo} onChange={e => setCorreo(e.target.value)} /></div>
+                  <div>
+                    <label className="font-semibold text-slate-600 block mb-1">Correo (Google / Acceso)</label>
+                    <input className={ic} type="email" value={correo} onChange={e => setCorreo(e.target.value)} placeholder="usuario@gmail.com" />
+                  </div>
                 </div>
+                <p className="text-[10px] text-blue-600 bg-blue-50/70 border border-blue-100 rounded-lg px-2.5 py-1.5 leading-snug">
+                  💡 Si asignas un correo de Google (Gmail), este colaborador podrá ingresar con un clic usando <strong>Continuar con Google</strong>.
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className="font-semibold text-slate-600 block mb-1">Cargo operativo</label><input className={ic} type="text" value={cargo} onChange={e => setCargo(e.target.value)} placeholder="Ej: Cajera Turno" /></div>
                   <div>
