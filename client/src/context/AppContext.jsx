@@ -619,15 +619,37 @@ export const AppProvider = ({ children }) => {
     return { type, nombre, id: type === 'cash' ? 1 : type === 'card' ? 2 : 3 };
   };
 
-  // Vuelto calculation
-  const receivedNum = parseFloat(cashReceived) || 0;
+  // Vuelto & cash sufficiency calculation (RF-24)
+  const totalRounded = Math.round(grandTotal);
+  const rawCashStr = String(cashReceived ?? '').trim();
+  const receivedNum = rawCashStr === '' ? NaN : Number(rawCashStr);
   const resolvedPay = resolvePayMethod();
-  const vuelto = resolvedPay.type === 'cash' ? Math.max(0, receivedNum - grandTotal) : 0;
+  const isCashInsufficient =
+    resolvedPay.type === 'cash' &&
+    grandTotal > 0 &&
+    (!Number.isFinite(receivedNum) || receivedNum < totalRounded);
+  const missingCashAmount =
+    resolvedPay.type === 'cash' && grandTotal > 0
+      ? Math.max(0, totalRounded - (Number.isFinite(receivedNum) ? receivedNum : 0))
+      : 0;
+  const vuelto =
+    resolvedPay.type === 'cash' && Number.isFinite(receivedNum)
+      ? Math.max(0, receivedNum - totalRounded)
+      : 0;
 
   // Checkout Execution
   const executeCheckout = async () => {
     if (cart.length === 0) {
       showToast('No hay productos en el ticket', 'warning');
+      return;
+    }
+
+    if (resolvedPay.type === 'cash' && (!Number.isFinite(receivedNum) || receivedNum < totalRounded)) {
+      const faltante = Math.max(0, totalRounded - (Number.isFinite(receivedNum) ? receivedNum : 0));
+      showToast(
+        `Pago insuficiente: faltan $ ${Math.round(faltante).toLocaleString('es-CO')} para completar el total de la venta.`,
+        'warning'
+      );
       return;
     }
 
@@ -677,6 +699,8 @@ export const AppProvider = ({ children }) => {
       descuento_total: discountAmount,
       impuesto: tax,
       total: grandTotal,
+      monto_recibido: resolvedPay.type === 'cash' ? receivedNum : totalRounded,
+      cambio: vuelto,
       id_forma_pago: (() => {
         if (typeof payMethod === 'object' && payMethod?.id_forma_pago) return payMethod.id_forma_pago;
         if (typeof payMethod === 'number') return payMethod;
@@ -1314,6 +1338,8 @@ export const AppProvider = ({ children }) => {
     grandTotal,
     totalUnits,
     vuelto,
+    isCashInsufficient,
+    missingCashAmount,
     resolvedPay,
 
     // Actions

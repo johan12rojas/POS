@@ -27,6 +27,8 @@ export const PaymentPanel = () => {
     cashReceived,
     setCashReceived,
     vuelto,
+    isCashInsufficient,
+    missingCashAmount,
     resolvedPay,
     executeCheckout,
     showToast,
@@ -174,14 +176,20 @@ export const PaymentPanel = () => {
   // Cleanup poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Auto-fill cash received when switching to cash method
+  // Auto-fill exact cash ONLY when switching to cash or when a new sale starts (never overwrite manual user input)
+  const prevTotalRef = useRef(0);
+  const prevMethodRef = useRef(resolvedPay?.type);
   useEffect(() => {
-    if (resolvedPay?.type === "cash" && (!cashReceived || parseFloat(cashReceived) < grandTotal)) {
-      if (grandTotal > 0) {
-        setCashReceived(String(Math.round(grandTotal)));
-      }
+    const switchedToCash = prevMethodRef.current !== "cash" && resolvedPay?.type === "cash";
+    const startedNewSale = prevTotalRef.current === 0 && grandTotal > 0;
+    if (resolvedPay?.type === "cash" && grandTotal > 0 && (switchedToCash || startedNewSale)) {
+      setCashReceived(String(Math.round(grandTotal)));
+    } else if (grandTotal === 0 && prevTotalRef.current > 0) {
+      setCashReceived("");
     }
-  }, [grandTotal, resolvedPay?.type, cashReceived, setCashReceived]);
+    prevTotalRef.current = grandTotal;
+    prevMethodRef.current = resolvedPay?.type;
+  }, [grandTotal, resolvedPay?.type, setCashReceived]);
 
   const setMontoPreset = (val) => {
     const num = Math.round(val);
@@ -277,7 +285,11 @@ export const PaymentPanel = () => {
             <div className="relative w-32">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">$</span>
               <input
-                className="w-full pl-5 pr-1.5 py-0.5 text-right font-mono font-bold text-xs bg-white rounded border border-slate-300 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                className={`w-full pl-5 pr-1.5 py-0.5 text-right font-mono font-bold text-xs bg-white rounded border focus:ring-1 focus:outline-none ${
+                  isCashInsufficient
+                    ? "border-rose-400 text-rose-700 focus:ring-rose-500 bg-rose-50/40"
+                    : "border-slate-300 focus:ring-blue-600"
+                }`}
                 id="input-monto-recibido"
                 step="any"
                 min="0"
@@ -287,6 +299,18 @@ export const PaymentPanel = () => {
               />
             </div>
           </div>
+          {isCashInsufficient && (
+            <div
+              id="alert-pago-insuficiente"
+              className="flex items-center justify-between gap-1.5 px-2 py-1 rounded-md bg-rose-50 border border-rose-300 text-rose-700 text-[10.5px] font-bold"
+            >
+              <span className="flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm text-rose-600">warning</span>
+                Pago insuficiente
+              </span>
+              <span className="font-mono">Faltan {formatCOP(missingCashAmount)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-1 text-[10px] flex-wrap">
             {(() => {
               const tot = Math.round(grandTotal || 0);
@@ -552,12 +576,28 @@ export const PaymentPanel = () => {
 
       {/* Botón principal de cobro */}
       <button
-        className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-lg font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+        className={`w-full py-2 rounded-lg font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all ${
+          cart.length === 0 || isCashInsufficient
+            ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+            : "bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white cursor-pointer"
+        }`}
         id="btn-cobrar"
+        disabled={cart.length === 0 || isCashInsufficient}
         onClick={executeCheckout}
+        title={
+          isCashInsufficient
+            ? `Pago insuficiente: faltan ${formatCOP(missingCashAmount)}`
+            : "Cobrar e imprimir comprobante (F12)"
+        }
       >
-        <span className="material-symbols-outlined text-base">receipt_long</span>
-        <span>Cobrar e Imprimir (F12)</span>
+        <span className="material-symbols-outlined text-base">
+          {isCashInsufficient ? "block" : "receipt_long"}
+        </span>
+        <span>
+          {isCashInsufficient
+            ? `Pago insuficiente (Faltan ${formatCOP(missingCashAmount)})`
+            : "Cobrar e Imprimir (F12)"}
+        </span>
       </button>
     </div>
   );

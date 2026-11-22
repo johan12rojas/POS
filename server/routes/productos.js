@@ -88,6 +88,16 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Helper: validar valor numérico estricto (rechaza letras, NaN, vacío)
+function parseStrictNumber(raw) {
+  if (raw === undefined || raw === null) return NaN;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+  const s = String(raw).trim();
+  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return NaN;
+  const num = Number(s);
+  return Number.isFinite(num) ? num : NaN;
+}
+
 // 3. POST /api/productos - Registrar producto
 router.post('/', async (req, res) => {
   const {
@@ -104,33 +114,72 @@ router.post('/', async (req, res) => {
     estado = 'ACTIVO',
     id_usuario = 1
   } = req.body;
-  
-  if (!codigo || !nombre || !precio_venta || !id_categoria) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios (código, nombre, precio, categoría)' });
+
+  const cleanCodigo = String(codigo || '').trim();
+  const cleanNombre = String(nombre || '').trim();
+  const parsedPrice = parseStrictNumber(precio_venta);
+  const parsedCategory = parseInt(id_categoria, 10);
+  const parsedMinStock = stock_minimo !== undefined && stock_minimo !== null && stock_minimo !== ''
+    ? parseStrictNumber(stock_minimo)
+    : 5;
+  const parsedInitialStock = stock_inicial !== undefined && stock_inicial !== null && stock_inicial !== ''
+    ? parseStrictNumber(stock_inicial)
+    : 0;
+
+  if (!cleanCodigo) {
+    return res.status(400).json({ error: 'El código del producto es obligatorio.', codigo: 'CODIGO_REQUERIDO' });
+  }
+  if (!cleanNombre) {
+    return res.status(400).json({ error: 'El nombre del producto es obligatorio.', codigo: 'NOMBRE_REQUERIDO' });
+  }
+  if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+    return res.status(400).json({ error: 'El precio de venta debe ser un valor numérico mayor a 0.', codigo: 'PRECIO_INVALIDO' });
+  }
+  if (!Number.isInteger(parsedCategory) || parsedCategory <= 0) {
+    return res.status(400).json({ error: 'Debes seleccionar una categoría válida.', codigo: 'CATEGORIA_REQUERIDA' });
+  }
+  if (!Number.isFinite(parsedMinStock) || parsedMinStock < 0) {
+    return res.status(400).json({ error: 'El stock mínimo debe ser un número mayor o igual a 0.' });
+  }
+  if (!Number.isFinite(parsedInitialStock) || parsedInitialStock < 0) {
+    return res.status(400).json({ error: 'El stock inicial debe ser un número mayor o igual a 0.' });
   }
 
   const client = await pool.connect().catch(() => null);
   if (client) {
     try {
       await client.query('BEGIN');
+
+      const dupCode = await client.query(
+        'SELECT id_producto FROM productos WHERE LOWER(TRIM(codigo)) = LOWER($1) LIMIT 1',
+        [cleanCodigo]
+      );
+      if (dupCode.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya existe un producto registrado con el código "${cleanCodigo}".`,
+          codigo: 'CODIGO_DUPLICADO'
+        });
+      }
+
       const prodRes = await client.query(
         `INSERT INTO productos (codigo, nombre, descripcion, precio_venta, stock_minimo, id_categoria, id_proveedor, imagen_url, estado)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
         [
-          codigo.trim(),
-          nombre.trim(),
+          cleanCodigo,
+          cleanNombre,
           descripcion || '',
-          parseFloat(precio_venta),
-          parseInt(stock_minimo || 5),
-          parseInt(id_categoria),
-          id_proveedor ? parseInt(id_proveedor) : 1,
+          parsedPrice,
+          Math.floor(parsedMinStock),
+          parsedCategory,
+          id_proveedor ? parseInt(id_proveedor, 10) : 1,
           imagen_url || '',
           estado.toUpperCase()
         ]
       );
       const newProduct = prodRes.rows[0];
 
-      const initialStock = parseInt(stock_inicial || 0);
+      const initialStock = Math.floor(parsedInitialStock);
       await client.query(
         `INSERT INTO inventario (id_producto, cantidad_actual) VALUES ($1, $2)`,
         [newProduct.id_producto, initialStock]
@@ -153,25 +202,41 @@ router.post('/', async (req, res) => {
     } catch (dbErr) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('DB error creating product:', dbErr.message);
+      if (dbErr.code === '23505') {
+        return res.status(400).json({
+          error: `Ya existe un producto registrado con el código "${cleanCodigo}".`,
+          codigo: 'CODIGO_DUPLICADO'
+        });
+      }
+      if (dbErr.code === '23514' || dbErr.code === '22P02' || dbErr.code === '23503' || dbErr.code === '23502') {
+        return res.status(400).json({ error: 'Datos inválidos para registrar el producto. Verifica código, categoría y precio.' });
+      }
+      return res.status(500).json({ error: 'Error interno al registrar el producto.' });
     } finally {
       client.release();
     }
   }
 
-  // Fallback in-memory
-  const cat = categories.find(c => c.id_categoria === parseInt(id_categoria));
+  // Fallback in-memory (con validación de código único)
+  if (products.some(p => String(p.codigo || '').trim().toLowerCase() === cleanCodigo.toLowerCase())) {
+    return res.status(400).json({
+      error: `Ya existe un producto registrado con el código "${cleanCodigo}".`,
+      codigo: 'CODIGO_DUPLICADO'
+    });
+  }
+  const cat = categories.find(c => c.id_categoria === parsedCategory);
   const newProduct = {
     id_producto: products.length > 0 ? Math.max(...products.map(p => p.id_producto)) + 1 : 1,
-    codigo: codigo.trim(),
-    nombre: nombre.trim(),
+    codigo: cleanCodigo,
+    nombre: cleanNombre,
     descripcion: descripcion || '',
-    precio_venta: parseFloat(precio_venta),
+    precio_venta: parsedPrice,
     costo: parseFloat(costo || 0),
-    stock_minimo: parseInt(stock_minimo || 5),
-    id_categoria: parseInt(id_categoria),
+    stock_minimo: Math.floor(parsedMinStock),
+    id_categoria: parsedCategory,
     categoria_nombre: cat ? cat.nombre : 'General',
     imagen_url: imagen_url || 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=360&auto=format&fit=crop&q=80',
-    stock: parseInt(stock_inicial || 0),
+    stock: Math.floor(parsedInitialStock),
     estado: estado.toUpperCase()
   };
 
@@ -195,6 +260,17 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { nombre, precio_venta, id_categoria, id_proveedor, stock_minimo, imagen_url, stock, descripcion, costo, estado, id_usuario = 1 } = req.body;
 
+  if (nombre !== undefined && !String(nombre).trim()) {
+    return res.status(400).json({ error: 'El nombre del producto no puede quedar vacío.' });
+  }
+  let parsedPrice = null;
+  if (precio_venta !== undefined && precio_venta !== null) {
+    parsedPrice = parseStrictNumber(precio_venta);
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ error: 'El precio de venta debe ser un valor numérico mayor a 0.' });
+    }
+  }
+
   try {
     await pool.query(
       `UPDATE productos 
@@ -210,14 +286,14 @@ router.put('/:id', async (req, res) => {
        WHERE id_producto = $9`,
       [
         nombre ? nombre.trim() : null,
-        precio_venta !== undefined && precio_venta !== null ? parseFloat(precio_venta) : null,
-        id_categoria ? parseInt(id_categoria) : null,
-        stock_minimo !== undefined && stock_minimo !== null ? parseInt(stock_minimo) : null,
+        parsedPrice,
+        id_categoria ? parseInt(id_categoria, 10) : null,
+        stock_minimo !== undefined && stock_minimo !== null ? parseInt(stock_minimo, 10) : null,
         imagen_url !== undefined ? imagen_url : null,
         descripcion !== undefined ? descripcion : null,
         estado ? estado.toUpperCase() : null,
-        id_proveedor ? parseInt(id_proveedor) : null,
-        parseInt(id)
+        id_proveedor ? parseInt(id_proveedor, 10) : null,
+        parseInt(id, 10)
       ]
     );
 

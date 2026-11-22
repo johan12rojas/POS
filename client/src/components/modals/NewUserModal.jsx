@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../api/api';
 
 export const NewUserModal = () => {
-  const { activeModal, closeModal, setEmployees, refreshVerificationStatus, showToast, currentUser } = useApp();
+  const { activeModal, closeModal, employees = [], setEmployees, refreshVerificationStatus, showToast, currentUser } = useApp();
 
   const [tipoDoc, setTipoDoc] = useState('CC');
   const [numDoc, setNumDoc] = useState('');
@@ -17,11 +17,13 @@ export const NewUserModal = () => {
   const [password, setPassword] = useState('');
   const [createdEmp, setCreatedEmp] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (activeModal !== 'new-user') return null;
 
   const handleClose = () => {
     setCreatedEmp(null);
+    setErrorMsg('');
     closeModal();
   };
 
@@ -35,21 +37,35 @@ export const NewUserModal = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMsg('');
     if (!nombres.trim() || !apellidos.trim() || !numDoc.trim() || !correo.trim()) {
-      showToast('Por favor completa nombres, apellidos, identificación y correo electrónico', 'warning');
+      const msg = 'Por favor completa nombres, apellidos, identificación y correo electrónico.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+
+    const cleanDoc = numDoc.trim();
+    const duplicateDoc = employees.find(
+      (emp) => String(emp.numero_identificacion || '').trim() === cleanDoc
+    );
+    if (duplicateDoc) {
+      const msg = `Ya existe un empleado registrado con el número de documento ${cleanDoc}.`;
+      setErrorMsg(msg);
+      showToast(msg, 'error');
       return;
     }
 
     const payload = {
       tipo_identificacion: tipoDoc,
-      numero_identificacion: numDoc.trim(),
+      numero_identificacion: cleanDoc,
       nombres: nombres.trim(),
       apellidos: apellidos.trim(),
       telefono: telefono.trim(),
       correo: correo.trim(),
       cargo: cargo.trim() || role,
       rol: role,
-      nombre_usuario: username.trim() || `${nombres.trim().toLowerCase().split(' ')[0]}.${numDoc.trim().slice(-3)}`,
+      nombre_usuario: username.trim() || `${nombres.trim().toLowerCase().split(' ')[0]}.${cleanDoc.slice(-3)}`,
       password: password || '123456',
       id_usuario: currentUser?.id_usuario || 1
     };
@@ -59,6 +75,7 @@ export const NewUserModal = () => {
       const newEmp = await api.createEmployee(payload);
       setEmployees(prev => [...prev, newEmp]);
       setCreatedEmp(newEmp);
+      setErrorMsg('');
       showToast(`Colaborador registrado. Enlace de verificación enviado a ${payload.correo}`, 'mark_email_read');
       setNumDoc('');
       setNombres('');
@@ -68,7 +85,9 @@ export const NewUserModal = () => {
       setUsername('');
       setPassword('');
     } catch (err) {
-      showToast(err.message || 'Error al registrar colaborador', 'error');
+      const msg = err.message || 'Error al registrar colaborador';
+      setErrorMsg(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -151,6 +170,12 @@ export const NewUserModal = () => {
           </div>
         ) : (
           <form className="space-y-2.5 text-xs" onSubmit={handleSubmit}>
+            {errorMsg && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-start gap-2 text-[11px] font-semibold">
+                <span className="material-symbols-outlined text-base text-rose-600 shrink-0">error</span>
+                <span>{errorMsg}</span>
+              </div>
+            )}
             {/* Identificación */}
             <div className="grid grid-cols-3 gap-2">
               <div>

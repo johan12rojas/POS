@@ -74,10 +74,76 @@ router.get('/', async (req, res) => {
 
 // POST /api/ventas - Checkout (Transactional sale)
 router.post('/', async (req, res) => {
-  const { id_cliente, items, subtotal, descuento_total, impuesto, total, id_forma_pago, metodo_nombre, id_usuario, id_caja, cajero: cajeroNombre, cajeroRol } = req.body;
+  const {
+    id_cliente,
+    items,
+    subtotal,
+    descuento_total,
+    impuesto,
+    total,
+    id_forma_pago,
+    metodo_nombre,
+    monto_recibido,
+    pagos,
+    id_usuario,
+    id_caja,
+    cajero: cajeroNombre,
+    cajeroRol
+  } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'El carrito no puede estar vacío' });
+  }
+
+  const totalNum = Number(total);
+  if (!Number.isFinite(totalNum) || totalNum <= 0) {
+    return res.status(400).json({ error: 'El total de la venta debe ser un valor numérico mayor a 0.' });
+  }
+
+  const totalRounded = Math.round(totalNum);
+  const isCashPayment =
+    Number(id_forma_pago || 1) === 1 ||
+    String(metodo_nombre || '').toLowerCase().includes('efectivo') ||
+    String(metodo_nombre || '').toLowerCase().includes('cash');
+
+  // Validar suficiencia de pago en arreglo de pagos (si se envía)
+  if (Array.isArray(pagos) && pagos.length > 0) {
+    const sumaPagos = pagos.reduce((acc, p) => acc + Number(p?.monto || 0), 0);
+    if (!Number.isFinite(sumaPagos) || sumaPagos < totalRounded) {
+      const faltante = Math.max(0, totalRounded - (Number.isFinite(sumaPagos) ? sumaPagos : 0));
+      return res.status(400).json({
+        error: `Pago insuficiente: el monto pagado ($ ${Math.round(sumaPagos || 0).toLocaleString('es-CO')}) es menor al total de la venta ($ ${totalRounded.toLocaleString('es-CO')}). Faltan $ ${Math.round(faltante).toLocaleString('es-CO')}.`,
+        codigo: 'PAGO_INSUFICIENTE',
+        faltante: Math.round(faltante)
+      });
+    }
+  }
+
+  // Validar monto recibido (RF-06.1 / RF-23 / RF-24: impedir cobro si monto recibido < total)
+  let cambioCalculado = 0;
+  let montoRecibidoFinal = totalNum;
+  const hasMontoRecibido = monto_recibido !== undefined;
+  if (hasMontoRecibido || isCashPayment) {
+    if (hasMontoRecibido) {
+      if (monto_recibido === null || String(monto_recibido).trim() === '') {
+        return res.status(400).json({
+          error: `Pago insuficiente: debes ingresar el monto recibido para cubrir el total de $ ${totalRounded.toLocaleString('es-CO')}.`,
+          codigo: 'PAGO_INSUFICIENTE',
+          faltante: totalRounded
+        });
+      }
+      const recibidoNum = Number(monto_recibido);
+      if (!Number.isFinite(recibidoNum) || recibidoNum < totalRounded) {
+        const faltante = Math.max(0, totalRounded - (Number.isFinite(recibidoNum) ? recibidoNum : 0));
+        return res.status(400).json({
+          error: `Pago insuficiente: el monto recibido ($ ${Math.round(Number.isFinite(recibidoNum) ? recibidoNum : 0).toLocaleString('es-CO')}) es menor al total de la venta ($ ${totalRounded.toLocaleString('es-CO')}). Faltan $ ${Math.round(faltante).toLocaleString('es-CO')}.`,
+          codigo: 'PAGO_INSUFICIENTE',
+          faltante: Math.round(faltante)
+        });
+      }
+      montoRecibidoFinal = recibidoNum;
+      cambioCalculado = Math.max(0, recibidoNum - totalRounded);
+    }
   }
 
   if (!id_cliente || parseInt(id_cliente) === 1) {
@@ -213,6 +279,8 @@ router.post('/', async (req, res) => {
         id_venta: newVenta.id_venta,
         numero_factura,
         total: parseFloat(total),
+        monto_recibido: montoRecibidoFinal,
+        cambio: cambioCalculado,
         estado: 'COMPLETADA',
         fecha: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });

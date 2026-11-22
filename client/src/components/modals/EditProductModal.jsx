@@ -48,15 +48,24 @@ export const EditProductModal = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim() || !price) return;
+    const rawPrice = String(price ?? '').trim();
+    const parsedPrice = /^\d+(\.\d+)?$/.test(rawPrice) ? Number(rawPrice) : NaN;
+    if (!name.trim()) {
+      showToast('El nombre comercial del producto es obligatorio.', 'warning');
+      return;
+    }
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      showToast('El precio de venta debe ser un valor numérico mayor a 0.', 'warning');
+      return;
+    }
 
     const updateData = {
       nombre: name.trim(),
-      precio_venta: priceNum,
-      id_categoria: parseInt(categoryId),
-      id_proveedor: parseInt(providerId),
-      stock: parseInt(stock) || 0,
-      stock_minimo: parseInt(minStock) || 5,
+      precio_venta: parsedPrice,
+      id_categoria: parseInt(categoryId, 10),
+      id_proveedor: parseInt(providerId, 10),
+      stock: parseInt(stock, 10) || 0,
+      stock_minimo: parseInt(minStock, 10) || 5,
       imagen_url: imgUrl,
       costo: costNum
     };

@@ -17,8 +17,15 @@ export const NewProductModal = () => {
   const [price, setPrice] = useState('220000');
   const [stock, setStock] = useState('20');
   const [minStock, setMinStock] = useState('4');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (activeModal !== 'new-product') return null;
+
+  const handleClose = () => {
+    setErrorMsg('');
+    closeModal();
+  };
 
   const generateSKU = () => {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -51,57 +58,90 @@ export const NewProductModal = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !price) return;
+    setErrorMsg('');
 
-    const finalSku = sku || `TEK-${Math.floor(100000 + Math.random() * 900000)}`;
+    const cleanSku = sku.trim();
+    const cleanName = name.trim();
+    const rawPrice = String(price ?? '').trim();
+    const isStrictNumericPrice = /^\d+(\.\d+)?$/.test(rawPrice);
+    const parsedPrice = isStrictNumericPrice ? Number(rawPrice) : NaN;
+
+    if (!cleanSku) {
+      const msg = 'El código SKU del producto es obligatorio.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+
+    if (!cleanName) {
+      const msg = 'El nombre comercial del producto es obligatorio.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      const msg = 'El precio de venta debe ser un valor numérico mayor a 0.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+
+    const parsedStock = parseInt(stock, 10);
+    const parsedMinStock = parseInt(minStock, 10);
+    if (Number.isNaN(parsedStock) || parsedStock < 0) {
+      const msg = 'El stock inicial debe ser un número mayor o igual a 0.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+    if (Number.isNaN(parsedMinStock) || parsedMinStock < 0) {
+      const msg = 'El stock mínimo debe ser un número mayor o igual a 0.';
+      setErrorMsg(msg);
+      showToast(msg, 'warning');
+      return;
+    }
 
     const newProdPayload = {
-      codigo: finalSku,
-      nombre: name.trim(),
-      descripcion: `${name.trim()} - ${unit}`,
-      precio_venta: priceNum,
-      stock_minimo: parseInt(minStock) || 5,
-      id_categoria: parseInt(categoryId) || 1,
-      id_proveedor: parseInt(providerId) || 1,
+      codigo: cleanSku,
+      nombre: cleanName,
+      descripcion: `${cleanName} - ${unit}`,
+      precio_venta: parsedPrice,
+      stock_minimo: parsedMinStock,
+      id_categoria: parseInt(categoryId, 10) || 1,
+      id_proveedor: parseInt(providerId, 10) || 1,
       imagen_url: imgUrl,
-      stock_inicial: parseInt(stock) || 0,
+      stock_inicial: parsedStock,
       costo: costNum,
       id_usuario: currentUser?.id_usuario || 1
     };
 
-    const provObj = providers.find(p => p.id_proveedor === parseInt(providerId));
-    const catObj = categories.find(c => c.id_categoria === parseInt(categoryId));
+    const provObj = providers.find(p => p.id_proveedor === parseInt(providerId, 10));
+    const catObj = categories.find(c => c.id_categoria === parseInt(categoryId, 10));
 
+    setSaving(true);
     try {
       const created = await api.createProduct(newProdPayload);
       const enriched = {
         ...created,
         categoria_nombre: catObj ? catObj.nombre : 'Hardware & Dispositivos',
         proveedor_nombre: provObj ? provObj.nombre : 'Proveedor Mayorista',
-        stock: parseInt(stock) || 0
+        stock: parsedStock
       };
       setProducts(prev => [enriched, ...prev]);
-      showToast(`¡Producto de tecnología "${name}" registrado con éxito!`, 'check_circle');
-    } catch {
-      // Fallback
-      const fallbackProd = {
-        id_producto: Date.now(),
-        codigo: finalSku,
-        nombre: name.trim(),
-        precio_venta: priceNum,
-        stock_minimo: parseInt(minStock) || 5,
-        id_categoria: parseInt(categoryId) || 1,
-        id_proveedor: parseInt(providerId) || 1,
-        categoria_nombre: catObj ? catObj.nombre : 'Hardware & Dispositivos',
-        proveedor_nombre: provObj ? provObj.nombre : 'Proveedor Mayorista',
-        imagen_url: imgUrl,
-        stock: parseInt(stock) || 0
-      };
-      setProducts(prev => [fallbackProd, ...prev]);
-      showToast(`¡Producto "${name}" registrado con éxito!`, 'check_circle');
+      showToast(`¡Producto de tecnología "${cleanName}" registrado con éxito!`, 'check_circle');
+      setSku('');
+      setEan('');
+      setName('');
+      setErrorMsg('');
+      closeModal();
+    } catch (err) {
+      const msg = err.message || 'No se pudo registrar el producto. Verifica los datos ingresados.';
+      setErrorMsg(msg);
+      showToast(msg, 'error');
+    } finally {
+      setSaving(false);
     }
-
-    closeModal();
   };
 
   return (
@@ -119,12 +159,18 @@ export const NewProductModal = () => {
               </p>
             </div>
           </div>
-          <button className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer" onClick={closeModal}>
+          <button className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer" onClick={handleClose}>
             <span className="material-symbols-outlined text-base">close</span>
           </button>
         </div>
 
-        <form className="space-y-3 text-xs" onSubmit={handleSubmit}>
+        <form className="space-y-3 text-xs" onSubmit={handleSubmit} noValidate>
+          {errorMsg && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-start gap-2 text-[11px] font-semibold">
+              <span className="material-symbols-outlined text-base text-rose-600 shrink-0">error</span>
+              <span>{errorMsg}</span>
+            </div>
+          )}
           {/* Image preview & upload */}
           <div>
             <label className="font-semibold text-slate-700 block mb-1">Fotografía del Producto (Tecnología)</label>
@@ -147,7 +193,7 @@ export const NewProductModal = () => {
           <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="font-semibold text-slate-700">Código SKU</label>
+                <label className="font-semibold text-slate-700">Código SKU *</label>
                 <button
                   type="button"
                   onClick={generateSKU}
@@ -264,13 +310,14 @@ export const NewProductModal = () => {
                 />
               </div>
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Precio Venta PVP (COP)</label>
+                <label className="font-semibold text-slate-700 block mb-1">Precio Venta PVP (COP) *</label>
                 <input
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-blue-700 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                  min="0"
+                  min="1"
                   required
                   step="any"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="220000"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
@@ -314,16 +361,17 @@ export const NewProductModal = () => {
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             <button
               className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors"
-              onClick={closeModal}
+              onClick={handleClose}
               type="button"
             >
               Cancelar
             </button>
             <button
-              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5"
+              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
               type="submit"
+              disabled={saving}
             >
-              <span className="material-symbols-outlined text-sm font-bold">check</span> Guardar Producto
+              <span className="material-symbols-outlined text-sm font-bold">check</span> {saving ? 'Guardando...' : 'Guardar Producto'}
             </button>
           </div>
         </form>

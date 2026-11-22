@@ -118,7 +118,12 @@ router.post('/', async (req, res) => {
     id_usuario = 1
   } = req.body;
 
-  if (!numero_identificacion || !nombres || !apellidos) {
+  const cleanDoc = String(numero_identificacion || '').trim();
+  const cleanNombres = String(nombres || '').trim();
+  const cleanApellidos = String(apellidos || '').trim();
+  const cleanUsername = nombre_usuario ? String(nombre_usuario).trim() : '';
+
+  if (!cleanDoc || !cleanNombres || !cleanApellidos) {
     return res.status(400).json({ error: 'Identificación, nombres y apellidos son obligatorios' });
   }
 
@@ -133,25 +138,65 @@ router.post('/', async (req, res) => {
   if (client) {
     try {
       await client.query('BEGIN');
+
+      // Validar unicidad de documento, correo y nombre de usuario (RF-04.1)
+      const docExists = await client.query(
+        'SELECT id_empleado, nombres, apellidos FROM empleados WHERE TRIM(numero_identificacion) = $1 LIMIT 1',
+        [cleanDoc]
+      );
+      if (docExists.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya existe un empleado registrado con el número de documento ${cleanDoc}.`,
+          codigo: 'DOCUMENTO_DUPLICADO'
+        });
+      }
+
+      const emailExists = await client.query(
+        'SELECT id_empleado FROM empleados WHERE LOWER(TRIM(correo)) = $1 LIMIT 1',
+        [cleanEmail]
+      );
+      if (emailExists.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Ya existe un empleado registrado con el correo electrónico ${cleanEmail}.`,
+          codigo: 'CORREO_DUPLICADO'
+        });
+      }
+
+      if (cleanUsername) {
+        const userExists = await client.query(
+          'SELECT id_usuario FROM usuarios WHERE LOWER(TRIM(nombre_usuario)) = LOWER($1) LIMIT 1',
+          [cleanUsername]
+        );
+        if (userExists.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `El nombre de usuario "${cleanUsername}" ya está registrado.`,
+            codigo: 'USUARIO_DUPLICADO'
+          });
+        }
+      }
+
       const empRes = await client.query(
         `INSERT INTO empleados (tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, correo, cargo, correo_verificado, token_verificacion, estado, fecha_ingreso, fecha_registro)
          VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, 'ACTIVO', CURRENT_DATE, CURRENT_TIMESTAMP) RETURNING *`,
-        [tipo_identificacion, numero_identificacion, nombres, apellidos, telefono, cleanEmail, cargo, token]
+        [tipo_identificacion, cleanDoc, cleanNombres, cleanApellidos, telefono, cleanEmail, cargo, token]
       );
       const newEmp = empRes.rows[0];
 
-      if (nombre_usuario) {
+      if (cleanUsername) {
         const id_rol = getRoleId(rol);
         await client.query(
           `INSERT INTO usuarios (id_empleado, id_rol, nombre_usuario, password_hash, estado)
            VALUES ($1, $2, $3, $4, 'ACTIVO')`,
-          [newEmp.id_empleado, id_rol, nombre_usuario, password || 'default_hash']
+          [newEmp.id_empleado, id_rol, cleanUsername, password || 'default_hash']
         );
       }
 
       await client.query('COMMIT');
       newEmp.rol = rol;
-      newEmp.nombre_usuario = nombre_usuario || '';
+      newEmp.nombre_usuario = cleanUsername;
 
       const mailInfo = await sendVerificationEmail({
         to: cleanEmail,
@@ -175,23 +220,49 @@ router.post('/', async (req, res) => {
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('DB error adding employee:', err.message);
+      if (err.code === '23505') {
+        const detail = String(err.constraint || err.message || '').toLowerCase();
+        if (detail.includes('identificacion')) {
+          return res.status(400).json({
+            error: `Ya existe un empleado registrado con el número de documento ${cleanDoc}.`,
+            codigo: 'DOCUMENTO_DUPLICADO'
+          });
+        }
+        if (detail.includes('usuario')) {
+          return res.status(400).json({
+            error: `El nombre de usuario "${cleanUsername}" ya está registrado.`,
+            codigo: 'USUARIO_DUPLICADO'
+          });
+        }
+        return res.status(400).json({ error: 'Ya existe un registro duplicado con estos datos.' });
+      }
+      if (err.code === '23514' || err.code === '22P02' || err.code === '23502') {
+        return res.status(400).json({ error: 'Datos inválidos para registrar el empleado.' });
+      }
+      return res.status(500).json({ error: 'Error interno al registrar el empleado.' });
     } finally {
       client.release();
     }
   }
 
-  // Fallback in-memory
+  // Fallback in-memory (con validación de unicidad)
+  if (employees.some(e => String(e.numero_identificacion || '').trim() === cleanDoc)) {
+    return res.status(400).json({
+      error: `Ya existe un empleado registrado con el número de documento ${cleanDoc}.`,
+      codigo: 'DOCUMENTO_DUPLICADO'
+    });
+  }
   const newEmp = {
     id_empleado: Date.now(),
     tipo_identificacion,
-    numero_identificacion,
-    nombres,
-    apellidos,
+    numero_identificacion: cleanDoc,
+    nombres: cleanNombres,
+    apellidos: cleanApellidos,
     telefono,
     correo: cleanEmail,
     cargo,
     rol,
-    nombre_usuario: nombre_usuario || '',
+    nombre_usuario: cleanUsername,
     password: password || '123456',
     correo_verificado: false,
     token_verificacion: token,
@@ -246,6 +317,21 @@ router.put('/:id', async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Empleado no encontrado' });
       }
+      if (numero_identificacion && String(numero_identificacion).trim()) {
+        const cleanDocEdit = String(numero_identificacion).trim();
+        const dupDoc = await client.query(
+          'SELECT id_empleado FROM empleados WHERE TRIM(numero_identificacion) = $1 AND id_empleado <> $2 LIMIT 1',
+          [cleanDocEdit, id]
+        );
+        if (dupDoc.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Ya existe otro empleado registrado con el número de documento ${cleanDocEdit}.`,
+            codigo: 'DOCUMENTO_DUPLICADO'
+          });
+        }
+      }
+
       const prevEmail = (prevRes.rows[0].correo || '').trim().toLowerCase();
       const nextEmail = correo ? correo.trim().toLowerCase() : prevEmail;
       const emailChanged = Boolean(correo && nextEmail && nextEmail !== prevEmail);
@@ -302,6 +388,13 @@ router.put('/:id', async (req, res) => {
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       console.error('DB error updating employee:', err.message);
+      if (err.code === '23505') {
+        return res.status(400).json({
+          error: 'Ya existe otro empleado con ese número de documento o dato único.',
+          codigo: 'DOCUMENTO_DUPLICADO'
+        });
+      }
+      return res.status(500).json({ error: 'Error al actualizar el empleado.' });
     } finally {
       client.release();
     }
