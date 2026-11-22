@@ -166,6 +166,15 @@ export const api = {
   getPermisosByRol: (id_rol) => fetchJson(`/permisos/rol/${id_rol}`),
   updatePermisosByRol: (id_rol, permisos) => fetchJson(`/permisos/rol/${id_rol}`, { method: 'PUT', body: JSON.stringify({ permisos }) }),
 
+  // Solicitudes de Acceso (Aprobación por Administrador)
+  getSolicitudes: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchJson(`/solicitudes${query ? '?' + query : ''}`);
+  },
+  aprobarSolicitudEmpleado: (id, data) => fetchJson(`/solicitudes/${id}/aprobar-empleado`, { method: 'POST', body: JSON.stringify(data) }),
+  convertirSolicitudCliente: (id, data = {}) => fetchJson(`/solicitudes/${id}/convertir-cliente`, { method: 'POST', body: JSON.stringify(data) }),
+  rechazarSolicitud: (id, data = {}) => fetchJson(`/solicitudes/${id}/rechazar`, { method: 'POST', body: JSON.stringify(data) }),
+
   // Auditoría y Registro de Operaciones
   getAuditoria: () => fetchJson('/auditoria'),
   createAuditoria: (data) => fetchJson('/auditoria', { method: 'POST', body: JSON.stringify(data) }),

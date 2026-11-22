@@ -36,6 +36,7 @@ app.use('/api/compras', require('./routes/compras'));
 app.use('/api/formas-pago', require('./routes/formas_pago'));
 app.use('/api/permisos', require('./routes/permisos'));
 app.use('/api/inventario', require('./routes/inventario'));
+app.use('/api/solicitudes', require('./routes/solicitudes'));
 app.use('/api/auditoria', require('./routes/auditoria').router);
 
 // QR Payment page & session API

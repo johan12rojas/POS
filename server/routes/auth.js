@@ -217,6 +217,36 @@ router.post('/login', async (req, res) => {
         const payload = await buildUserPayload(user);
         return res.json(payload);
       }
+    } else {
+      // Verificar si tiene una solicitud de acceso pendiente o fue registrado como cliente
+      const solRes = await pool.query(
+        `SELECT estado, correo FROM solicitudes_acceso WHERE LOWER(TRIM(correo)) = $1 ORDER BY id_solicitud DESC LIMIT 1`,
+        [cleanId]
+      ).catch(() => ({ rows: [] }));
+      if (solRes.rows.length > 0) {
+        const st = solRes.rows[0].estado;
+        if (st === 'PENDIENTE') {
+          return res.status(403).json({
+            error: `Tu solicitud de acceso (${solRes.rows[0].correo}) aún está pendiente de aprobación por el Administrador.`,
+            codigo: 'SOLICITUD_PENDIENTE',
+            correo: solRes.rows[0].correo
+          });
+        }
+        if (st === 'CONVERTIDO_CLIENTE') {
+          return res.status(403).json({
+            error: `Tu cuenta (${solRes.rows[0].correo}) fue registrada como Cliente del almacén y no tiene acceso al panel administrativo del POS.`,
+            codigo: 'ES_CLIENTE',
+            correo: solRes.rows[0].correo
+          });
+        }
+        if (st === 'RECHAZADO') {
+          return res.status(403).json({
+            error: `Tu solicitud de acceso (${solRes.rows[0].correo}) fue rechazada por el Administrador.`,
+            codigo: 'SOLICITUD_RECHAZADA',
+            correo: solRes.rows[0].correo
+          });
+        }
+      }
     }
   } catch (err) {
     console.warn('Auth DB query error:', err.message);
@@ -384,44 +414,68 @@ router.post('/supabase-login', async (req, res) => {
       return res.json(payload);
     }
 
-    // 3. Usuario nuevo con Google: registrar automáticamente con rol básico (Cajero)
-    await client.query('BEGIN');
+    // 3. Si ya fue convertido en cliente (no es empleado), informarlo claramente
+    const existingCli = await client.query(
+      'SELECT id_cliente, nombres, apellidos FROM clientes WHERE LOWER(TRIM(correo)) = $1 LIMIT 1',
+      [email]
+    );
+    if (existingCli.rows.length > 0) {
+      return res.status(403).json({
+        error: `Tu cuenta (${email}) está registrada como Cliente del almacén y no tiene acceso al panel interno del POS.`,
+        codigo: 'ES_CLIENTE',
+        correo: email
+      });
+    }
+
+    // 4. Usuario nuevo con Google: crear o actualizar solicitud PENDIENTE para que el Administrador asigne rol o lo convierta en cliente
+    const existingSol = await client.query(
+      `SELECT id_solicitud, estado FROM solicitudes_acceso WHERE LOWER(TRIM(correo)) = $1 ORDER BY id_solicitud DESC LIMIT 1`,
+      [email]
+    );
+
+    if (existingSol.rows.length > 0) {
+      const st = existingSol.rows[0].estado;
+      if (st === 'PENDIENTE') {
+        await client.query(
+          `UPDATE solicitudes_acceso SET avatar_url = COALESCE($1, avatar_url), fecha_solicitud = CURRENT_TIMESTAMP WHERE id_solicitud = $2`,
+          [googleAvatar, existingSol.rows[0].id_solicitud]
+        );
+        return res.status(202).json({
+          pending: true,
+          codigo: 'SOLICITUD_PENDIENTE',
+          correo: email,
+          message: `Tu solicitud con ${email} ya fue enviada y está pendiente de aprobación por el Administrador.`
+        });
+      }
+      if (st === 'RECHAZADO') {
+        return res.status(403).json({
+          error: `Tu solicitud de acceso con ${email} fue rechazada por el Administrador. Contacta a administración si necesitas acceso.`,
+          codigo: 'SOLICITUD_RECHAZADA',
+          correo: email
+        });
+      }
+    }
 
     const { nombres, apellidos } = splitFullName(fullName, email);
     const shortUid = String(supaUser.id || Date.now()).replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
     const docNum = `G-${shortUid}`;
-    const username = await generateUniqueUsername(client, email.split('@')[0]);
 
-    const roleRes = await client.query(`SELECT id_rol, nombre FROM roles WHERE LOWER(nombre) LIKE '%cajero%' ORDER BY id_rol ASC LIMIT 1`);
-    const roleId = roleRes.rows[0]?.id_rol || 3;
-    const roleName = roleRes.rows[0]?.nombre || 'Cajero';
-
-    const empInsert = await client.query(`
-      INSERT INTO empleados (
-        tipo_identificacion, numero_identificacion, nombres, apellidos,
-        telefono, correo, cargo, correo_verificado, fecha_verificacion,
-        estado, fecha_ingreso, fecha_registro
+    const solInsert = await client.query(`
+      INSERT INTO solicitudes_acceso (
+        nombres, apellidos, correo, numero_identificacion,
+        proveedor_auth, avatar_url, estado
       )
-      VALUES ('CC', $1, $2, $3, '', $4, 'Cajero', TRUE, CURRENT_TIMESTAMP, 'ACTIVO', CURRENT_DATE, CURRENT_TIMESTAMP)
-      RETURNING id_empleado, nombres, apellidos, correo, cargo
-    `, [docNum, nombres, apellidos, email]);
+      VALUES ($1, $2, $3, $4, 'google', $5, 'PENDIENTE')
+      RETURNING id_solicitud, nombres, apellidos, correo, estado, fecha_solicitud
+    `, [nombres, apellidos, email, docNum, googleAvatar]);
 
-    const newEmp = empInsert.rows[0];
-
-    const usrInsert = await client.query(`
-      INSERT INTO usuarios (id_empleado, id_rol, nombre_usuario, password_hash, estado, ultimo_acceso)
-      VALUES ($1, $2, $3, 'SUPABASE_OAUTH', 'ACTIVO', CURRENT_TIMESTAMP)
-      RETURNING id_usuario, id_rol, nombre_usuario
-    `, [newEmp.id_empleado, roleId, username]);
-
-    await client.query('COMMIT');
-
-    const payload = await buildUserPayload(
-      { ...newEmp, ...usrInsert.rows[0], rol_nombre: roleName },
-      googleAvatar,
-      { auth_provider: provider, newly_registered: true }
-    );
-    return res.status(201).json(payload);
+    return res.status(202).json({
+      pending: true,
+      codigo: 'SOLICITUD_PENDIENTE',
+      correo: email,
+      solicitud: solInsert.rows[0],
+      message: `¡Solicitud de acceso enviada! El Administrador recibió tu notificación (${email}) para asignarte un rol o registrarte como cliente.`
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Error en /api/auth/supabase-login:', err.message);
@@ -432,7 +486,7 @@ router.post('/supabase-login', async (req, res) => {
 });
 
 // POST /api/auth/register
-// Registro directo desde la pantalla de inicio de sesión
+// Registro desde pantalla de login -> crea solicitud PENDIENTE para aprobación del Administrador
 router.post('/register', async (req, res) => {
   const {
     nombres,
@@ -440,8 +494,7 @@ router.post('/register', async (req, res) => {
     correo,
     password,
     numero_identificacion,
-    telefono = '',
-    nombre_usuario
+    telefono = ''
   } = req.body || {};
 
   if (!nombres?.trim() || !apellidos?.trim() || !correo?.trim() || !password) {
@@ -460,59 +513,64 @@ router.post('/register', async (req, res) => {
   const client = await pool.connect();
   try {
     const emailDup = await client.query(
-      'SELECT id_empleado FROM empleados WHERE LOWER(correo) = $1 LIMIT 1',
+      'SELECT id_empleado FROM empleados WHERE LOWER(TRIM(correo)) = $1 LIMIT 1',
       [cleanEmail]
     );
     if (emailDup.rows.length > 0) {
-      return res.status(409).json({ error: 'Ya existe una cuenta registrada con ese correo electrónico. Inicia sesión o usa Continuar con Google.' });
+      return res.status(409).json({ error: 'Ya existe un colaborador registrado con ese correo electrónico. Inicia sesión normalmente.' });
     }
 
-    const docNum = numero_identificacion?.trim() || `USR-${Date.now().toString().slice(-7)}`;
-    const docDup = await client.query(
-      'SELECT id_empleado FROM empleados WHERE numero_identificacion = $1 LIMIT 1',
-      [docNum]
+    const cliDup = await client.query(
+      'SELECT id_cliente FROM clientes WHERE LOWER(TRIM(correo)) = $1 LIMIT 1',
+      [cleanEmail]
     );
-    if (docDup.rows.length > 0) {
-      return res.status(409).json({ error: 'Ya existe un colaborador con ese número de identificación.' });
+    if (cliDup.rows.length > 0) {
+      return res.status(409).json({ error: 'Ese correo ya se encuentra registrado como Cliente en el almacén.' });
     }
 
-    await client.query('BEGIN');
+    const solDup = await client.query(
+      `SELECT id_solicitud, estado FROM solicitudes_acceso WHERE LOWER(TRIM(correo)) = $1 AND estado = 'PENDIENTE' LIMIT 1`,
+      [cleanEmail]
+    );
+    if (solDup.rows.length > 0) {
+      return res.status(202).json({
+        pending: true,
+        codigo: 'SOLICITUD_PENDIENTE',
+        correo: cleanEmail,
+        message: `Ya tienes una solicitud de acceso pendiente con ${cleanEmail}. Espera a que un Administrador la apruebe.`
+      });
+    }
 
-    const username = await generateUniqueUsername(client, nombre_usuario?.trim() || cleanEmail.split('@')[0]);
-    const roleRes = await client.query(`SELECT id_rol, nombre FROM roles WHERE LOWER(nombre) LIKE '%cajero%' ORDER BY id_rol ASC LIMIT 1`);
-    const roleId = roleRes.rows[0]?.id_rol || 3;
-    const roleName = roleRes.rows[0]?.nombre || 'Cajero';
+    const cleanDoc = numero_identificacion?.trim() || null;
+    if (cleanDoc) {
+      const docDup = await client.query(
+        'SELECT id_empleado FROM empleados WHERE TRIM(numero_identificacion) = $1 LIMIT 1',
+        [cleanDoc]
+      );
+      if (docDup.rows.length > 0) {
+        return res.status(400).json({ error: `Ya existe un colaborador registrado con el documento ${cleanDoc}.` });
+      }
+    }
 
-    const empInsert = await client.query(`
-      INSERT INTO empleados (
-        tipo_identificacion, numero_identificacion, nombres, apellidos,
-        telefono, correo, cargo, correo_verificado, fecha_verificacion,
-        estado, fecha_ingreso, fecha_registro
+    const solInsert = await client.query(`
+      INSERT INTO solicitudes_acceso (
+        nombres, apellidos, correo, numero_identificacion,
+        telefono, password_hash, proveedor_auth, estado
       )
-      VALUES ('CC', $1, $2, $3, $4, $5, 'Cajero', TRUE, CURRENT_TIMESTAMP, 'ACTIVO', CURRENT_DATE, CURRENT_TIMESTAMP)
-      RETURNING id_empleado, nombres, apellidos, correo, cargo
-    `, [docNum, nombres.trim(), apellidos.trim(), telefono.trim(), cleanEmail]);
+      VALUES ($1, $2, $3, $4, $5, $6, 'correo', 'PENDIENTE')
+      RETURNING id_solicitud, nombres, apellidos, correo, estado, fecha_solicitud
+    `, [nombres.trim(), apellidos.trim(), cleanEmail, cleanDoc, telefono.trim(), password]);
 
-    const newEmp = empInsert.rows[0];
-
-    const usrInsert = await client.query(`
-      INSERT INTO usuarios (id_empleado, id_rol, nombre_usuario, password_hash, estado, ultimo_acceso)
-      VALUES ($1, $2, $3, $4, 'ACTIVO', CURRENT_TIMESTAMP)
-      RETURNING id_usuario, id_rol, nombre_usuario
-    `, [newEmp.id_empleado, roleId, username, password]);
-
-    await client.query('COMMIT');
-
-    const payload = await buildUserPayload(
-      { ...newEmp, ...usrInsert.rows[0], rol_nombre: roleName },
-      null,
-      { newly_registered: true }
-    );
-    return res.status(201).json(payload);
+    return res.status(202).json({
+      pending: true,
+      codigo: 'SOLICITUD_PENDIENTE',
+      correo: cleanEmail,
+      solicitud: solInsert.rows[0],
+      message: `¡Solicitud de registro enviada! El Administrador recibió tu notificación (${cleanEmail}) para asignarte un rol o registrarte como cliente.`
+    });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
     console.error('Error en /api/auth/register:', err.message);
-    return res.status(500).json({ error: 'No se pudo completar el registro. Intenta de nuevo.' });
+    return res.status(500).json({ error: 'No se pudo enviar tu solicitud de registro. Intenta de nuevo.' });
   } finally {
     client.release();
   }

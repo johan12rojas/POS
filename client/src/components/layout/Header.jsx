@@ -21,11 +21,14 @@ export const Header = () => {
     setCurrentView,
     caja,
     currentUser,
+    isAdmin,
     logout,
     products = [],
     clients = [],
     providers = [],
     invoices = [],
+    accessRequests = [],
+    openSolicitudesInbox,
     openInvoiceModal,
     openPurchaseModal
   } = useApp();
@@ -39,6 +42,26 @@ export const Header = () => {
   const userMenuRef = useRef(null);
   const searchContainerRef = useRef(null);
 
+  // 0. Solicitudes de acceso pendientes (solo para Administradores)
+  const accessRequestAlerts = useMemo(() => {
+    if (!isAdmin) return [];
+    return (accessRequests || [])
+      .filter((s) => (s.estado || '').toUpperCase() === 'PENDIENTE')
+      .map((s) => ({
+        id: `access-req-${s.id_solicitud}`,
+        id_solicitud: s.id_solicitud,
+        icon: 'person_add',
+        iconColor: 'bg-indigo-100 text-indigo-700',
+        title: `Nueva Solicitud: ${s.nombres} ${s.apellidos}`,
+        desc: `${s.correo} (${s.proveedor_auth === 'google' ? 'Google' : 'Registro'}) solicita rol o alta como cliente.`,
+        time: s.fecha_solicitud
+          ? new Date(s.fecha_solicitud).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+          : 'Pendiente',
+        isAccessRequest: true,
+        isStockAlert: false,
+      }));
+  }, [isAdmin, accessRequests]);
+
   // 1. Alertas dinámicas de stock mínimo / bajo
   const lowStockAlerts = useMemo(() => {
     return products
@@ -46,16 +69,17 @@ export const Header = () => {
       .map(p => ({
         id: `low-stock-${p.id_producto}`,
         id_producto: p.id_producto,
-        icon: 'warning',
-        iconColor: p.stock === 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700',
-        title: `Stock ${p.stock === 0 ? 'Agotado' : 'Bajo'}: ${p.nombre}`,
+        isOutOfStock: (p.stock !== undefined ? p.stock : 0) <= 0,
+        icon: (p.stock !== undefined ? p.stock : 0) <= 0 ? 'error' : 'warning',
+        iconColor: (p.stock !== undefined ? p.stock : 0) <= 0 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700',
+        title: `${(p.stock !== undefined ? p.stock : 0) <= 0 ? 'Agotado' : 'Stock Bajo'}: ${p.nombre}`,
         desc: `Quedan solo ${p.stock} unid. en almacén (mínimo: ${p.stock_minimo || 5}) · SKU: ${p.codigo || 'N/A'}`,
         time: 'Alerta Activa',
         isStockAlert: true
       }));
   }, [products]);
 
-  // Combinar alertas dinámicas con avisos de caja y sincronización
+  // Combinar solicitudes de acceso, alertas de stock y estado de caja
   const notifications = useMemo(() => {
     const defaultNotifs = [
       {
@@ -68,8 +92,8 @@ export const Header = () => {
         isStockAlert: false
       }
     ];
-    return [...lowStockAlerts, ...defaultNotifs].filter(n => !dismissedIds.includes(n.id));
-  }, [lowStockAlerts, caja, dismissedIds]);
+    return [...accessRequestAlerts, ...lowStockAlerts, ...defaultNotifs].filter(n => !dismissedIds.includes(n.id));
+  }, [accessRequestAlerts, lowStockAlerts, caja, dismissedIds]);
 
   const dismissNotification = (id) => {
     setDismissedIds(prev => [...prev, id]);
@@ -393,9 +417,18 @@ export const Header = () => {
                   notifications.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className={`py-2 px-1.5 flex items-start gap-2.5 rounded-lg transition-colors ${notif.isStockAlert ? 'hover:bg-amber-50/70 cursor-pointer' : ''}`}
+                      className={`py-2 px-1.5 flex items-start gap-2.5 rounded-lg transition-colors ${
+                        notif.isAccessRequest
+                          ? 'hover:bg-indigo-50/80 cursor-pointer'
+                          : notif.isStockAlert
+                          ? 'hover:bg-amber-50/70 cursor-pointer'
+                          : ''
+                      }`}
                       onClick={() => {
-                        if (notif.isStockAlert) {
+                        if (notif.isAccessRequest) {
+                          openSolicitudesInbox?.();
+                          setShowNotifs(false);
+                        } else if (notif.isStockAlert) {
                           const prod = products.find(p => p.id_producto === notif.id_producto);
                           if (prod) {
                             openPurchaseModal(prod);
@@ -414,13 +447,31 @@ export const Header = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-1.5">
                           <p className="font-semibold text-slate-800 text-[11px]">{notif.title}</p>
+                          {notif.isAccessRequest && (
+                            <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 text-[9px] font-bold rounded">Solicitud</span>
+                          )}
                           {notif.isStockAlert && (
-                            <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 text-[9px] font-bold rounded">Bajo</span>
+                            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${notif.isOutOfStock ? 'bg-rose-100 text-rose-700' : 'bg-amber-200 text-amber-900'}`}>
+                              {notif.isOutOfStock ? 'Agotado' : 'Bajo'}
+                            </span>
                           )}
                         </div>
                         <p className="text-slate-500 text-[10px]">{notif.desc}</p>
                         <div className="flex items-center justify-between mt-1">
                           <span className="text-[9px] text-slate-400">{notif.time}</span>
+                          {notif.isAccessRequest && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openSolicitudesInbox?.();
+                                setShowNotifs(false);
+                              }}
+                              className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                            >
+                              <span className="material-symbols-outlined text-[11px]">manage_accounts</span>
+                              Asignar Rol
+                            </button>
+                          )}
                           {notif.isStockAlert && (
                             <button
                               onClick={(e) => {

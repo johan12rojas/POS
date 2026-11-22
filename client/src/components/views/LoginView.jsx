@@ -31,6 +31,7 @@ export const LoginView = () => {
     registerUser,
     oauthLoading,
     oauthError,
+    pendingApprovalInfo,
     clearOauthError,
     resendVerification,
   } = useApp();
@@ -133,6 +134,14 @@ export const LoginView = () => {
 
     if (!res.success) {
       setErrorMessage(res.error || 'No se pudo completar el registro.');
+    } else if (res.pending) {
+      setRegNombres('');
+      setRegApellidos('');
+      setRegCorreo('');
+      setRegDoc('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setMode('login');
     }
   };
 
@@ -226,6 +235,22 @@ export const LoginView = () => {
             </span>
             <div className="border-t border-slate-200 w-full"></div>
           </div>
+
+          {/* Confirmación de Solicitud Enviada al Administrador */}
+          {pendingApprovalInfo && (
+            <div className="p-3.5 bg-indigo-50 border border-indigo-300 text-indigo-900 rounded-xl text-xs space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-600 text-lg shrink-0">hourglass_top</span>
+                <span className="font-bold text-indigo-900">Solicitud de Acceso Pendiente</span>
+              </div>
+              <p className="text-indigo-800 font-normal text-[11px] leading-snug pl-7">
+                {pendingApprovalInfo.message}
+              </p>
+              <p className="text-[10px] text-indigo-600 pl-7 font-medium">
+                El Administrador verá tu solicitud en sus notificaciones para asignarte un rol (Cajero, Supervisor o Admin) o registrarte como Cliente.
+              </p>
+            </div>
+          )}
 
           {/* Alertas */}
           {unverifiedInfo && (
@@ -444,12 +469,12 @@ export const LoginView = () => {
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-base">person_add</span>
-                    <span>Crear Cuenta e Ingresar</span>
+                    <span>Enviar Solicitud de Acceso</span>
                   </>
                 )}
               </button>
               <p className="text-[10px] text-slate-400 text-center">
-                Las cuentas nuevas inician con rol <strong>Cajero</strong>; un Administrador puede ajustar su rol desde Empleados.
+                Tu solicitud llegará al <strong>Administrador</strong> para aprobarte con un rol o registrarte como Cliente.
               </p>
             </form>
           )}

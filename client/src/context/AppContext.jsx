@@ -202,6 +202,9 @@ export const AppProvider = ({ children }) => {
 
   const [oauthLoading, setOauthLoading] = useState(false);
   const [oauthError, setOauthError] = useState('');
+  const [pendingApprovalInfo, setPendingApprovalInfo] = useState(null);
+  const [accessRequests, setAccessRequests] = useState([]);
+  const [empleadosInitialTab, setEmpleadosInitialTab] = useState('colaboradores');
   const currentUserRef = useRef(currentUser);
   const syncingOAuthRef = useRef(false);
 
@@ -209,28 +212,123 @@ export const AppProvider = ({ children }) => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
-  const clearOauthError = () => setOauthError('');
+  const clearOauthError = () => {
+    setOauthError('');
+    setPendingApprovalInfo(null);
+  };
+
+  const refreshAccessRequests = async () => {
+    try {
+      const list = await api.getSolicitudes();
+      if (Array.isArray(list)) setAccessRequests(list);
+    } catch {
+      // ignorar si aún no hay conexión
+    }
+  };
+
+  // Cargar y refrescar solicitudes de acceso automáticamente para Administradores
+  useEffect(() => {
+    if (!isAdmin) {
+      setAccessRequests([]);
+      return;
+    }
+    refreshAccessRequests();
+    const timer = setInterval(refreshAccessRequests, 25000);
+    return () => clearInterval(timer);
+  }, [isAdmin]);
+
+  const openSolicitudesInbox = () => {
+    setEmpleadosInitialTab('solicitudes');
+    setCurrentView('empleados');
+    refreshAccessRequests();
+  };
+
+  const approveAccessRequestAsEmployee = async (idSolicitud, rol = 'Cajero', cargo = '') => {
+    try {
+      const res = await api.aprobarSolicitudEmpleado(idSolicitud, {
+        rol,
+        cargo: cargo || rol,
+        id_usuario: currentUser?.id_usuario || 1,
+      });
+      await refreshAccessRequests();
+      api.getEmployees().then(list => { if (Array.isArray(list)) setEmployees(list); }).catch(() => {});
+      showToast(`Acceso aprobado como ${rol} para ${res?.empleado?.nombres || 'el usuario'}.`, 'verified_user');
+      return { success: true, data: res };
+    } catch (err) {
+      showToast(err.message || 'No se pudo aprobar la solicitud.', 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
+  const convertAccessRequestToClient = async (idSolicitud) => {
+    try {
+      const res = await api.convertirSolicitudCliente(idSolicitud, {
+        id_usuario: currentUser?.id_usuario || 1,
+      });
+      await refreshAccessRequests();
+      api.getClients().then(list => {
+        if (Array.isArray(list)) {
+          setClients(list.filter(c => c.id_cliente !== 1 && c.numero_identificacion !== '0000000000' && !(c.nombres || '').toLowerCase().includes('consumidor')));
+        }
+      }).catch(() => {});
+      showToast(`Solicitud convertida en Cliente registrado (${res?.cliente?.nombres || ''}).`, 'person_check');
+      return { success: true, data: res };
+    } catch (err) {
+      showToast(err.message || 'No se pudo convertir en cliente.', 'error');
+      return { success: false, error: err.message };
+    }
+  };
+
+  const rejectAccessRequest = async (idSolicitud, observacion = '') => {
+    try {
+      await api.rechazarSolicitud(idSolicitud, {
+        observacion,
+        id_usuario: currentUser?.id_usuario || 1,
+      });
+      await refreshAccessRequests();
+      showToast('Solicitud de acceso rechazada.', 'block');
+      return { success: true };
+    } catch (err) {
+      showToast(err.message || 'No se pudo rechazar la solicitud.', 'error');
+      return { success: false, error: err.message };
+    }
+  };
 
   const syncSupabaseSession = async (session) => {
     if (!session?.access_token || currentUserRef.current || syncingOAuthRef.current) return;
     syncingOAuthRef.current = true;
     setOauthLoading(true);
     setOauthError('');
+    setPendingApprovalInfo(null);
     try {
-      const user = await api.supabaseLogin(session.access_token);
+      const res = await api.supabaseLogin(session.access_token);
+
+      // Si es usuario nuevo -> queda pendiente de aprobación por el Administrador
+      if (res?.pending || res?.codigo === 'SOLICITUD_PENDIENTE') {
+        setPendingApprovalInfo({
+          correo: res.correo || session.user?.email || '',
+          message: res.message || 'Tu solicitud fue enviada al Administrador para asignarte un rol o registrarte como cliente.',
+        });
+        showToast('Solicitud de acceso enviada al Administrador', 'mark_email_unread');
+        if (supabase) {
+          supabase.auth.signOut().catch(() => {});
+        }
+        if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        return;
+      }
+
+      const user = res;
       setCurrentUser(user);
       if (user.permisos) setUserPermisos(user.permisos);
       api.getAllPermisos().then(list => setAllPermisos(list)).catch(() => {});
       api.getEmployees().then(list => { if (Array.isArray(list) && list.length) setEmployees(list); }).catch(() => {});
 
-      const welcomeMsg = user.newly_registered
-        ? `¡Cuenta registrada con Google! Bienvenido/a, ${user.nombre_completo}`
-        : `¡Bienvenido/a, ${user.nombre_completo}!`;
-      showToast(welcomeMsg, 'verified_user');
+      showToast(`¡Bienvenido/a, ${user.nombre_completo}!`, 'verified_user');
       setCurrentView('pos');
       checkCajaAndPrompt();
 
-      // Limpiar hash/query de OAuth de la barra de direcciones
       if (window.location.hash.includes('access_token') || window.location.search.includes('code=')) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -317,8 +415,20 @@ export const AppProvider = ({ children }) => {
 
   const registerUser = async (payload) => {
     hasPromptedCajaRef.current = false;
+    setPendingApprovalInfo(null);
     try {
-      const user = await api.register(payload);
+      const res = await api.register(payload);
+      if (res?.pending || res?.codigo === 'SOLICITUD_PENDIENTE') {
+        const info = {
+          correo: res.correo || payload.correo,
+          message: res.message || '¡Solicitud enviada! Un Administrador revisará tu registro para asignarte un rol o registrarte como cliente.',
+        };
+        setPendingApprovalInfo(info);
+        showToast('Solicitud de registro enviada al Administrador', 'mark_email_unread');
+        return { success: true, pending: true, ...info };
+      }
+
+      const user = res;
       setCurrentUser(user);
       if (user.permisos) setUserPermisos(user.permisos);
       api.getAllPermisos().then(list => setAllPermisos(list)).catch(() => {});
@@ -1368,7 +1478,16 @@ export const AppProvider = ({ children }) => {
     registerUser,
     oauthLoading,
     oauthError,
+    pendingApprovalInfo,
     clearOauthError,
+    accessRequests,
+    refreshAccessRequests,
+    empleadosInitialTab,
+    setEmpleadosInitialTab,
+    openSolicitudesInbox,
+    approveAccessRequestAsEmployee,
+    convertAccessRequestToClient,
+    rejectAccessRequest,
     logout,
 
     // Product CRUD
