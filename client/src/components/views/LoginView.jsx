@@ -204,18 +204,17 @@ export const LoginView = () => {
 
   return (
     <div
-      className="min-h-[100dvh] w-full flex items-center justify-center bg-cover bg-center bg-no-repeat p-3 sm:p-4 select-none relative overflow-y-auto"
+      className="min-h-[100dvh] w-full flex flex-col items-center justify-center bg-cover bg-center bg-no-repeat p-3 sm:p-4 select-none relative overflow-y-auto"
       style={{ backgroundImage: `url(${fondoPOS})` }}
     >
       {/* Overlay */}
       <div className="absolute inset-0 bg-slate-900/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-      <div className="w-full max-w-3xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/50 overflow-hidden relative z-10 my-4 grid grid-cols-1 lg:grid-cols-12 lg:divide-x divide-slate-200/80">
-        {/* Columna Izquierda: Login / Registro */}
-        <div
-          ref={loginCardRef}
-          className="lg:col-span-7 flex flex-col justify-between"
-        >
+      {/* Login centrado exactamente como estaba originalmente */}
+      <div
+        ref={loginCardRef}
+        className="w-full max-w-md bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden relative z-10 my-2"
+      >
         {/* Header Branding */}
         <div className="p-5 pb-4 text-center border-b border-slate-100 bg-gradient-to-b from-white to-slate-50/50">
           <img src={logoImg} alt="NexPOS Logo" className="w-14 h-14 mx-auto mb-2 object-contain drop-shadow-md" />
@@ -533,65 +532,56 @@ export const LoginView = () => {
             </form>
           )}
         </div>
+      </div>
+
+      {/* Contenedor pequeño flotante a la derecha en desktop / debajo en celular */}
+      <aside className="relative z-10 w-full max-w-md mt-2 mb-3 lg:mt-0 lg:mb-0 lg:fixed lg:right-5 lg:top-1/2 lg:-translate-y-1/2 lg:w-60 bg-white/88 backdrop-blur-md rounded-xl shadow-lg border border-white/60 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Cuentas de prueba
+          </span>
+          <span className="text-[10px] font-mono text-slate-400">caja123</span>
         </div>
 
-        {/* Columna Derecha: Accesos de prueba sutiles */}
-        <aside className="lg:col-span-5 bg-slate-50/75 p-5 flex flex-col justify-center border-t lg:border-t-0 border-slate-200/80">
-          <div className="space-y-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Entorno de pruebas
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Usuarios disponibles por rol
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              {DEMO_USERS.map((demo) => {
-                const isSelected = filledDemoKey === demo.key;
-                return (
-                  <div
-                    key={demo.key}
-                    className={`px-3 py-2.5 rounded-xl bg-white border transition-colors flex items-center justify-between gap-2 ${
-                      isSelected ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200/80 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${demo.dotClass}`} />
-                        <span className="text-xs font-semibold text-slate-800 truncate">
-                          {demo.rol}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {demo.nombre} · <span className="font-mono text-slate-500">{demo.identifier}</span>
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      id={`btn-demo-${demo.key}`}
-                      onClick={() => handleAutocompleteDemo(demo)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer shrink-0 ${
-                        isSelected
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200'
-                      }`}
-                    >
-                      {isSelected ? 'Listo' : 'Autocompletar'}
-                    </button>
+        <div className="space-y-1.5">
+          {DEMO_USERS.map((demo) => {
+            const isSelected = filledDemoKey === demo.key;
+            return (
+              <div
+                key={demo.key}
+                className={`px-2.5 py-2 rounded-lg bg-white/90 border transition-colors flex items-center justify-between gap-2 ${
+                  isSelected ? 'border-blue-300 bg-blue-50/40' : 'border-slate-200/80 hover:border-slate-300'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${demo.dotClass}`} />
+                    <span className="text-[11px] font-semibold text-slate-800 truncate">
+                      {demo.rol}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
+                  <p className="text-[10px] font-mono text-slate-400 truncate pl-3">
+                    {demo.identifier}
+                  </p>
+                </div>
 
-            <p className="text-[10.5px] text-slate-400 pt-1">
-              Clave general de prueba: <span className="font-mono text-slate-500">caja123</span>
-            </p>
-          </div>
-        </aside>
-      </div>
+                <button
+                  type="button"
+                  id={`btn-demo-${demo.key}`}
+                  onClick={() => handleAutocompleteDemo(demo)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-semibold border transition-colors cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200'
+                  }`}
+                >
+                  {isSelected ? 'Listo' : 'Autocompletar'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
     </div>
   );
 };
