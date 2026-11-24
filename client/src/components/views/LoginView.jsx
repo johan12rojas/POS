@@ -2,21 +2,15 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import logoImg from '../../assets/img/logo.png';
 import fondoPOS from '../../assets/img/fondoPOS.png';
-import adminImg from '../../assets/img/admin.webp';
-import superImg from '../../assets/img/super.webp';
-import cajeroImg from '../../assets/img/cajero.webp';
 
 const DEMO_USERS = [
   {
     key: 'admin',
-    rol: 'Administrador General',
+    rol: 'Administrador',
     nombre: 'Elena Morales',
     identifier: 'elena.morales',
     password: 'caja123',
-    avatar: adminImg,
-    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
-    accentBorder: 'hover:border-blue-300',
-    summary: 'Acceso total: POS, Caja, Inventario, Compras, Empleados, Solicitudes y Auditoría.',
+    dotClass: 'bg-blue-500',
   },
   {
     key: 'supervisor',
@@ -24,10 +18,7 @@ const DEMO_USERS = [
     nombre: 'Rodrigo Alarcón',
     identifier: 'rodrigo.alarcon',
     password: 'caja123',
-    avatar: superImg,
-    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
-    accentBorder: 'hover:border-amber-300',
-    summary: 'POS, Cortes X/Z de Caja, descuentos, anulaciones, inventario y clientes.',
+    dotClass: 'bg-amber-500',
   },
   {
     key: 'cajero',
@@ -35,10 +26,7 @@ const DEMO_USERS = [
     nombre: 'Camila Valenzuela',
     identifier: 'camila.valenzuela',
     password: 'caja123',
-    avatar: cajeroImg,
-    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    accentBorder: 'hover:border-emerald-300',
-    summary: 'Terminal POS, cobros en efectivo/tarjeta/QR, consulta de caja y clientes.',
+    dotClass: 'bg-emerald-500',
   },
 ];
 
@@ -222,11 +210,11 @@ export const LoginView = () => {
       {/* Overlay */}
       <div className="absolute inset-0 bg-slate-900/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch relative z-10 my-4">
+      <div className="w-full max-w-3xl bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/50 overflow-hidden relative z-10 my-4 grid grid-cols-1 lg:grid-cols-12 lg:divide-x divide-slate-200/80">
         {/* Columna Izquierda: Login / Registro */}
         <div
           ref={loginCardRef}
-          className="lg:col-span-7 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden flex flex-col justify-between"
+          className="lg:col-span-7 flex flex-col justify-between"
         >
         {/* Header Branding */}
         <div className="p-5 pb-4 text-center border-b border-slate-100 bg-gradient-to-b from-white to-slate-50/50">
@@ -547,89 +535,60 @@ export const LoginView = () => {
         </div>
         </div>
 
-        {/* Columna Derecha: Cuentas de Prueba por Rol (Autocompletar) */}
-        <aside className="lg:col-span-5 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden flex flex-col">
-          <div className="p-4 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                <span className="material-symbols-outlined text-base">science</span>
-              </div>
-              <div>
-                <h2 className="text-sm font-extrabold text-slate-900 leading-tight">
-                  Cuentas de Prueba (Demo)
-                </h2>
-                <p className="text-[10.5px] text-slate-500 leading-snug">
-                  Un usuario de cada rol para probar el sistema rápidamente
-                </p>
-              </div>
+        {/* Columna Derecha: Accesos de prueba sutiles */}
+        <aside className="lg:col-span-5 bg-slate-50/75 p-5 flex flex-col justify-center border-t lg:border-t-0 border-slate-200/80">
+          <div className="space-y-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Entorno de pruebas
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Usuarios disponibles por rol
+              </p>
             </div>
-          </div>
 
-          <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between text-xs">
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {DEMO_USERS.map((demo) => {
                 const isSelected = filledDemoKey === demo.key;
                 return (
                   <div
                     key={demo.key}
-                    className={`p-3 rounded-xl border transition-all bg-slate-50/80 ${
-                      isSelected
-                        ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-200'
-                        : `border-slate-200 ${demo.accentBorder}`
+                    className={`px-3 py-2.5 rounded-xl bg-white border transition-colors flex items-center justify-between gap-2 ${
+                      isSelected ? 'border-blue-300 bg-blue-50/30' : 'border-slate-200/80 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <img
-                        src={demo.avatar}
-                        alt={demo.rol}
-                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xs shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <span
-                          className={`inline-block px-2 py-0.2 rounded-full text-[9.5px] font-bold border ${demo.badgeClass}`}
-                        >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${demo.dotClass}`} />
+                        <span className="text-xs font-semibold text-slate-800 truncate">
                           {demo.rol}
                         </span>
-                        <p className="font-bold text-slate-900 text-xs truncate mt-0.5">
-                          {demo.nombre}
-                        </p>
                       </div>
-                      <button
-                        type="button"
-                        id={`btn-demo-${demo.key}`}
-                        onClick={() => handleAutocompleteDemo(demo)}
-                        className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-2xs ${
-                          isSelected
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-xs">
-                          {isSelected ? 'check' : 'auto_fix_high'}
-                        </span>
-                        <span>{isSelected ? 'Listo' : 'Autocompletar'}</span>
-                      </button>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {demo.nombre} · <span className="font-mono text-slate-500">{demo.identifier}</span>
+                      </p>
                     </div>
 
-                    <p className="text-[10.5px] text-slate-500 mt-2 leading-snug">
-                      {demo.summary}
-                    </p>
-
-                    <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px] font-mono text-slate-500">
-                      <span>Usuario: <strong className="text-slate-700">{demo.identifier}</strong></span>
-                      <span>Clave: <strong className="text-slate-700">{demo.password}</strong></span>
-                    </div>
+                    <button
+                      type="button"
+                      id={`btn-demo-${demo.key}`}
+                      onClick={() => handleAutocompleteDemo(demo)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer shrink-0 ${
+                        isSelected
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200'
+                      }`}
+                    >
+                      {isSelected ? 'Listo' : 'Autocompletar'}
+                    </button>
                   </div>
                 );
               })}
             </div>
 
-            <div className="p-2.5 rounded-xl bg-slate-100/90 border border-slate-200 text-[10.5px] text-slate-600 flex items-start gap-2">
-              <span className="material-symbols-outlined text-blue-600 text-sm shrink-0 mt-0.5">info</span>
-              <span className="leading-snug">
-                Pulsa <strong>Autocompletar</strong> en cualquier perfil y luego haz clic en <strong>Ingresar al Sistema</strong> para iniciar sesión con ese rol.
-              </span>
-            </div>
+            <p className="text-[10.5px] text-slate-400 pt-1">
+              Clave general de prueba: <span className="font-mono text-slate-500">caja123</span>
+            </p>
           </div>
         </aside>
       </div>
