@@ -210,11 +210,13 @@ export const LoginView = () => {
       {/* Overlay */}
       <div className="absolute inset-0 bg-slate-900/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-      {/* Login centrado exactamente como estaba originalmente */}
-      <div
-        ref={loginCardRef}
-        className="w-full max-w-md bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden relative z-10 my-2"
-      >
+      {/* Wrapper centrado del Login + panel compacto anclado justo a su derecha en desktop */}
+      <div className="relative z-10 w-full max-w-md my-2">
+        {/* Login centrado exactamente como estaba originalmente */}
+        <div
+          ref={loginCardRef}
+          className="w-full bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden"
+        >
         {/* Header Branding */}
         <div className="p-5 pb-4 text-center border-b border-slate-100 bg-gradient-to-b from-white to-slate-50/50">
           <img src={logoImg} alt="NexPOS Logo" className="w-14 h-14 mx-auto mb-2 object-contain drop-shadow-md" />
@@ -534,8 +536,8 @@ export const LoginView = () => {
         </div>
       </div>
 
-      {/* Contenedor pequeño flotante a la derecha en desktop / debajo en celular */}
-      <aside className="relative z-10 w-full max-w-md mt-2 mb-3 lg:mt-0 lg:mb-0 lg:fixed lg:right-5 lg:top-1/2 lg:-translate-y-1/2 lg:w-60 bg-white/88 backdrop-blur-md rounded-xl shadow-lg border border-white/60 p-3">
+      {/* Contenedor pequeño anclado justo a la derecha del login en desktop / debajo en celular */}
+      <aside className="w-full mt-3 lg:mt-0 lg:absolute lg:left-full lg:ml-5 lg:top-1/2 lg:-translate-y-1/2 lg:w-64 bg-white/88 backdrop-blur-md rounded-xl shadow-lg border border-white/60 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Cuentas de prueba
@@ -582,6 +584,7 @@ export const LoginView = () => {
           })}
         </div>
       </aside>
+      </div>
     </div>
   );
 };
