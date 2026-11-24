@@ -1,7 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import logoImg from '../../assets/img/logo.png';
 import fondoPOS from '../../assets/img/fondoPOS.png';
+import adminImg from '../../assets/img/admin.webp';
+import superImg from '../../assets/img/super.webp';
+import cajeroImg from '../../assets/img/cajero.webp';
+
+const DEMO_USERS = [
+  {
+    key: 'admin',
+    rol: 'Administrador General',
+    nombre: 'Elena Morales',
+    identifier: 'elena.morales',
+    password: 'caja123',
+    avatar: adminImg,
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+    accentBorder: 'hover:border-blue-300',
+    summary: 'Acceso total: POS, Caja, Inventario, Compras, Empleados, Solicitudes y Auditoría.',
+  },
+  {
+    key: 'supervisor',
+    rol: 'Supervisor',
+    nombre: 'Rodrigo Alarcón',
+    identifier: 'rodrigo.alarcon',
+    password: 'caja123',
+    avatar: superImg,
+    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+    accentBorder: 'hover:border-amber-300',
+    summary: 'POS, Cortes X/Z de Caja, descuentos, anulaciones, inventario y clientes.',
+  },
+  {
+    key: 'cajero',
+    rol: 'Cajero',
+    nombre: 'Camila Valenzuela',
+    identifier: 'camila.valenzuela',
+    password: 'caja123',
+    avatar: cajeroImg,
+    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    accentBorder: 'hover:border-emerald-300',
+    summary: 'Terminal POS, cobros en efectivo/tarjeta/QR, consulta de caja y clientes.',
+  },
+];
 
 const GoogleIcon = () => (
   <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
@@ -34,9 +73,13 @@ export const LoginView = () => {
     pendingApprovalInfo,
     clearOauthError,
     resendVerification,
+    showToast,
   } = useApp();
 
   const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [filledDemoKey, setFilledDemoKey] = useState(null);
+  const loginCardRef = useRef(null);
+  const submitBtnRef = useRef(null);
 
   // Login state
   const [identifier, setIdentifier] = useState('');
@@ -152,6 +195,22 @@ export const LoginView = () => {
     await loginWithGoogle();
   };
 
+  const handleAutocompleteDemo = (demo) => {
+    setMode('login');
+    setIdentifier(demo.identifier);
+    setPassword(demo.password);
+    setErrorMessage('');
+    setIsInactiveError(false);
+    setUnverifiedInfo(null);
+    clearOauthError?.();
+    setFilledDemoKey(demo.key);
+    showToast?.(`Datos de ${demo.rol} (${demo.nombre}) autocompletados`, 'auto_fix_high');
+    if (loginCardRef.current) {
+      loginCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    setTimeout(() => submitBtnRef.current?.focus(), 120);
+  };
+
   const displayError = errorMessage || oauthError;
   const busy = isLoading || oauthLoading;
 
@@ -163,7 +222,12 @@ export const LoginView = () => {
       {/* Overlay */}
       <div className="absolute inset-0 bg-slate-900/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-      <div className="w-full max-w-md bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden relative z-10 my-4">
+      <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch relative z-10 my-4">
+        {/* Columna Izquierda: Login / Registro */}
+        <div
+          ref={loginCardRef}
+          className="lg:col-span-7 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden flex flex-col justify-between"
+        >
         {/* Header Branding */}
         <div className="p-5 pb-4 text-center border-b border-slate-100 bg-gradient-to-b from-white to-slate-50/50">
           <img src={logoImg} alt="NexPOS Logo" className="w-14 h-14 mx-auto mb-2 object-contain drop-shadow-md" />
@@ -359,6 +423,7 @@ export const LoginView = () => {
               </div>
 
               <button
+                ref={submitBtnRef}
                 type="submit"
                 disabled={busy}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
@@ -460,6 +525,7 @@ export const LoginView = () => {
               </div>
 
               <button
+                ref={submitBtnRef}
                 type="submit"
                 disabled={busy}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
@@ -479,6 +545,93 @@ export const LoginView = () => {
             </form>
           )}
         </div>
+        </div>
+
+        {/* Columna Derecha: Cuentas de Prueba por Rol (Autocompletar) */}
+        <aside className="lg:col-span-5 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-white/40 overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                <span className="material-symbols-outlined text-base">science</span>
+              </div>
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-900 leading-tight">
+                  Cuentas de Prueba (Demo)
+                </h2>
+                <p className="text-[10.5px] text-slate-500 leading-snug">
+                  Un usuario de cada rol para probar el sistema rápidamente
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between text-xs">
+            <div className="space-y-2.5">
+              {DEMO_USERS.map((demo) => {
+                const isSelected = filledDemoKey === demo.key;
+                return (
+                  <div
+                    key={demo.key}
+                    className={`p-3 rounded-xl border transition-all bg-slate-50/80 ${
+                      isSelected
+                        ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-200'
+                        : `border-slate-200 ${demo.accentBorder}`
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <img
+                        src={demo.avatar}
+                        alt={demo.rol}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xs shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <span
+                          className={`inline-block px-2 py-0.2 rounded-full text-[9.5px] font-bold border ${demo.badgeClass}`}
+                        >
+                          {demo.rol}
+                        </span>
+                        <p className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                          {demo.nombre}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        id={`btn-demo-${demo.key}`}
+                        onClick={() => handleAutocompleteDemo(demo)}
+                        className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-2xs ${
+                          isSelected
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-xs">
+                          {isSelected ? 'check' : 'auto_fix_high'}
+                        </span>
+                        <span>{isSelected ? 'Listo' : 'Autocompletar'}</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[10.5px] text-slate-500 mt-2 leading-snug">
+                      {demo.summary}
+                    </p>
+
+                    <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px] font-mono text-slate-500">
+                      <span>Usuario: <strong className="text-slate-700">{demo.identifier}</strong></span>
+                      <span>Clave: <strong className="text-slate-700">{demo.password}</strong></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-100/90 border border-slate-200 text-[10.5px] text-slate-600 flex items-start gap-2">
+              <span className="material-symbols-outlined text-blue-600 text-sm shrink-0 mt-0.5">info</span>
+              <span className="leading-snug">
+                Pulsa <strong>Autocompletar</strong> en cualquier perfil y luego haz clic en <strong>Ingresar al Sistema</strong> para iniciar sesión con ese rol.
+              </span>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
